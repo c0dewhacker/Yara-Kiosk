@@ -13,7 +13,7 @@
     "@tauri-apps/cli": "^2",
     "autoprefixer": "^10",
     "postcss": "^8",
-    "tailwindcss": "^3",
+    "tailwindcss": "^4",
     "typescript": "^5",
     "vite": "^5"
   },
