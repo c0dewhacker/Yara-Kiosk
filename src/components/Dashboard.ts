@@ -22,8 +22,8 @@ export class Dashboard {
   private buildHTML(): string {
     return `
       <!-- Hero strip with dot-grid texture -->
-      <div class="relative rounded-2xl overflow-hidden border border-surface-600 bg-surface-800 p-6 flex flex-col gap-1">
-        <div class="absolute inset-0 bg-dot-grid bg-[size:1rem_1rem] opacity-30 pointer-events-none"></div>
+      <div class="relative rounded-2xl border border-surface-600 bg-surface-800 p-6 flex flex-col gap-1">
+        <div class="absolute inset-0 rounded-2xl bg-dot-grid bg-[size:1rem_1rem] opacity-30 pointer-events-none"></div>
         <div class="relative">
           <h1 class="text-2xl font-bold tracking-tight">
             <span class="bg-yarax-gradient bg-clip-text text-transparent">YARA-X</span>
