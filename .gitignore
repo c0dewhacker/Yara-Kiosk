@@ -26,6 +26,8 @@ target/
 *.crt
 *.p12
 a.out
+src/*.js
+src/*.js.map
 src/**/*.js
 src/**/*.js.map
 
