@@ -4,6 +4,7 @@ import type { UsbDevice, ReportEntry } from '../types/index';
 import { showToast } from '../utils/toast';
 import { formatBytes } from '../utils/format';
 import { escapeHtml } from '../utils/escape';
+import { reportModal } from './ReportModal';
 
 export class Dashboard {
   private el: HTMLElement | null = null;
@@ -21,8 +22,8 @@ export class Dashboard {
   private buildHTML(): string {
     return `
       <!-- Hero strip with dot-grid texture -->
-      <div class="relative rounded-2xl overflow-hidden border border-surface-600 bg-surface-800 p-6 flex flex-col gap-1">
-        <div class="absolute inset-0 bg-dot-grid bg-[size:1rem_1rem] opacity-30 pointer-events-none"></div>
+      <div class="relative rounded-2xl border border-surface-600 bg-surface-800 p-6 flex flex-col gap-1">
+        <div class="absolute inset-0 rounded-2xl bg-dot-grid bg-[size:1rem_1rem] opacity-30 pointer-events-none"></div>
         <div class="relative">
           <h1 class="text-2xl font-bold tracking-tight">
             <span class="bg-yarax-gradient bg-clip-text text-transparent">YARA-X</span>
@@ -244,16 +245,10 @@ export class Dashboard {
       }
 
       tbody.querySelectorAll<HTMLButtonElement>('.open-report-btn').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
+        btn.addEventListener('click', (e) => {
           e.stopPropagation();
           const reportPath = btn.dataset['path'];
-          if (reportPath) {
-            try {
-              await invoke('open_report', { reportPath });
-            } catch (err) {
-              showToast(`Could not open report: ${err}`, 'error');
-            }
-          }
+          if (reportPath) reportModal.open(reportPath);
         });
       });
 

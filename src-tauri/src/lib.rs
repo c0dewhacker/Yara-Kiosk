@@ -202,6 +202,7 @@ pub fn run(config: KioskConfig) {
             commands::get_settings,
             commands::save_settings,
             commands::list_reports,
+            commands::get_report_html,
             commands::open_report,
             commands::list_sources,
             commands::add_source,
