@@ -630,6 +630,13 @@ pub async fn list_reports(state: State<'_, ManagedState>) -> Result<Vec<ReportEn
     Ok(entries)
 }
 
+/// Return the raw HTML of a report file for in-app display.
+#[tauri::command]
+pub fn get_report_html(path: String, state: State<'_, ManagedState>) -> Result<String, String> {
+    let canonical = validate_path(&path, &state.0.reports_dir)?;
+    std::fs::read_to_string(&canonical).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn open_report(
     report_path: String,

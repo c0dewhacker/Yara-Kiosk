@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { ReportEntry } from '../types/index';
 import { showToast } from '../utils/toast';
 import { escapeHtml } from '../utils/escape';
+import { reportModal } from './ReportModal';
 
 export class ReportViewer {
   private el: HTMLElement | null = null;
@@ -168,14 +169,9 @@ export class ReportViewer {
     }
 
     tbody.querySelectorAll<HTMLButtonElement>('.open-report-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
+      btn.addEventListener('click', () => {
         const reportPath = btn.dataset['path'];
-        if (!reportPath) return;
-        try {
-          await invoke('open_report', { reportPath });
-        } catch (err) {
-          showToast(`Could not open report: ${err}`, 'error');
-        }
+        if (reportPath) reportModal.open(reportPath);
       });
     });
   }

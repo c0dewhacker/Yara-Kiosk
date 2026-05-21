@@ -4,6 +4,7 @@ import type { UsbDevice, ReportEntry } from '../types/index';
 import { showToast } from '../utils/toast';
 import { formatBytes } from '../utils/format';
 import { escapeHtml } from '../utils/escape';
+import { reportModal } from './ReportModal';
 
 export class Dashboard {
   private el: HTMLElement | null = null;
@@ -244,16 +245,10 @@ export class Dashboard {
       }
 
       tbody.querySelectorAll<HTMLButtonElement>('.open-report-btn').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
+        btn.addEventListener('click', (e) => {
           e.stopPropagation();
           const reportPath = btn.dataset['path'];
-          if (reportPath) {
-            try {
-              await invoke('open_report', { reportPath });
-            } catch (err) {
-              showToast(`Could not open report: ${err}`, 'error');
-            }
-          }
+          if (reportPath) reportModal.open(reportPath);
         });
       });
 
