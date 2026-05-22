@@ -15,9 +15,9 @@ mod platform {
             .or_else(|_| std::env::var("LOGNAME"))
             .map_err(|_| "Cannot determine current username (USER/LOGNAME not set)".to_string())?;
 
-        let mut auth = pam::Authenticator::with_password("login")
+        let mut auth = pam::Client::with_password("login")
             .map_err(|_| "PAM initialisation failed".to_string())?;
-        auth.get_handler().set_credentials(&username, password);
+        auth.conversation_mut().set_credentials(&username, password);
         Ok(auth.authenticate().is_ok())
     }
 }
