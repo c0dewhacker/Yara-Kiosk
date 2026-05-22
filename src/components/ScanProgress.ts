@@ -1,7 +1,7 @@
-import { invoke } from '@tauri-apps/api/core';
 import type { ScanProgress as ScanProgressEvent, ScanComplete } from '../types/index';
 import { showToast } from '../utils/toast';
 import { escapeHtml } from '../utils/escape';
+import { reportModal } from './ReportModal';
 
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
@@ -281,15 +281,9 @@ export class ScanProgress {
     }
 
     const openReportBtn = this.el.querySelector<HTMLButtonElement>('#open-report-btn');
-    openReportBtn?.addEventListener('click', async () => {
+    openReportBtn?.addEventListener('click', () => {
       const reportPath = openReportBtn.dataset['path'];
-      if (reportPath) {
-        try {
-          await invoke('open_report', { reportPath });
-        } catch (err) {
-          showToast(`Could not open report: ${err}`, 'error');
-        }
-      }
+      if (reportPath) reportModal.open(reportPath);
     });
 
     const backBtn = this.el.querySelector<HTMLButtonElement>('#back-to-dashboard-btn');
