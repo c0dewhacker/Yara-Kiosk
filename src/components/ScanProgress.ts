@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import type { ScanProgress as ScanProgressEvent, ScanComplete } from '../types/index';
 import { showToast } from '../utils/toast';
 import { escapeHtml } from '../utils/escape';
