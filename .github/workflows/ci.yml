@@ -23,7 +23,9 @@ jobs:
             librsvg2-dev \
             libssl-dev \
             libayatana-appindicator3-dev \
-            libpam0g-dev
+            libpam0g-dev \
+            libclang-dev \
+            clang
 
       - name: Set up Rust (stable)
         uses: dtolnay/rust-toolchain@stable
