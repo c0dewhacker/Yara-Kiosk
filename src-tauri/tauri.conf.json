@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Yara Kiosk",
+  "productName": "YaraKiosk",
   "version": "0.1.0",
   "identifier": "com.c0dewhacker.yara-kiosk",
   "build": {
