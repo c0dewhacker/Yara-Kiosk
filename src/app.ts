@@ -42,6 +42,7 @@ export class App {
   private settings: Settings;
 
   private viewContainers: Map<ViewName, HTMLElement> = new Map();
+  private mountedViews = new Set<ViewName>();
 
   // Auth gate — unlocked once per session after a successful password verification.
   private sessionUnlocked = false;
@@ -56,7 +57,6 @@ export class App {
     this.settings = new Settings();
 
     this.buildShell();
-    this.mountComponents();
     this.registerTauriEvents();
     this.registerCustomEvents();
     this.refreshRuleCount();
@@ -170,24 +170,28 @@ export class App {
     });
   }
 
-  private mountComponents(): void {
-    const dashContainer = this.viewContainers.get('dashboard');
-    if (dashContainer) this.dashboard.mount(dashContainer);
+  private componentFor(name: ViewName): Dashboard | ScanProgress | ReportViewer | RuleManager | Settings {
+    switch (name) {
+      case 'dashboard': return this.dashboard;
+      case 'progress': return this.scanProgress;
+      case 'reports': return this.reportViewer;
+      case 'rules': return this.ruleManager;
+      case 'settings': return this.settings;
+    }
+  }
 
-    const progressContainer = this.viewContainers.get('progress');
-    if (progressContainer) this.scanProgress.mount(progressContainer);
-
-    const reportsContainer = this.viewContainers.get('reports');
-    if (reportsContainer) this.reportViewer.mount(reportsContainer);
-
-    const rulesContainer = this.viewContainers.get('rules');
-    if (rulesContainer) this.ruleManager.mount(rulesContainer);
-
-    const settingsContainer = this.viewContainers.get('settings');
-    if (settingsContainer) this.settings.mount(settingsContainer);
+  private mountIfNeeded(name: ViewName): void {
+    if (this.mountedViews.has(name)) return;
+    const container = this.viewContainers.get(name);
+    if (container) {
+      this.componentFor(name).mount(container);
+      this.mountedViews.add(name);
+    }
   }
 
   switchView(name: ViewName): void {
+    this.mountIfNeeded(name);
+
     // Hide all panels
     for (const [, el] of this.viewContainers) {
       el.classList.add('hidden');
@@ -285,6 +289,11 @@ export class App {
       this.ruleManager.onFetchError(event.payload.source, event.payload.error);
     });
     this.unlisteners.push(unlistenFetchError);
+
+    const unlistenRulesReady = await listen<number>('rules-ready', () => {
+      this.refreshRuleCount();
+    });
+    this.unlisteners.push(unlistenRulesReady);
   }
 
   private registerCustomEvents(): void {

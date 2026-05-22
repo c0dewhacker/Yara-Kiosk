@@ -178,13 +178,15 @@ fn load_rules_recursive(
             continue;
         }
 
-        let abs = match path.canonicalize() {
-            Ok(p) => p.to_string_lossy().to_string(),
-            Err(_) => path.to_string_lossy().to_string(),
-        };
-        if disabled.contains(&abs) {
-            log::debug!("Skipping disabled rule file: {:?}", path);
-            continue;
+        if !disabled.is_empty() {
+            let abs = match path.canonicalize() {
+                Ok(p) => p.to_string_lossy().to_string(),
+                Err(_) => path.to_string_lossy().to_string(),
+            };
+            if disabled.contains(&abs) {
+                log::debug!("Skipping disabled rule file: {:?}", path);
+                continue;
+            }
         }
 
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
