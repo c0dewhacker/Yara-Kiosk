@@ -73,7 +73,9 @@ jobs:
             libssl-dev \
             patchelf \
             libayatana-appindicator3-dev \
-            libpam0g-dev
+            libpam0g-dev \
+            libclang-dev \
+            clang
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
