@@ -16,7 +16,7 @@ export default defineConfig({
     emptyOutDir: true,
     target:
       process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome105" : "safari13",
-    minify: !process.env.TAURI_ENV_DEBUG ? ("esbuild" as const) : false,
+    minify: !process.env.TAURI_ENV_DEBUG ? ("oxc" as const) : false,
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
   },
 });
