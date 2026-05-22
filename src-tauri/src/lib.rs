@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 pub mod auth;
 pub mod commands;
@@ -112,78 +112,16 @@ pub fn run(config: KioskConfig) {
                 .unwrap_or_default();
             *state.disabled_rules.lock().unwrap() = disabled;
 
-            // Compile rules from enabled sources.
-            {
-                let sources = state.sources.lock().unwrap().clone();
-                let disabled = state.disabled_rules.lock().unwrap().clone();
-                let compiled = if sources.is_empty() {
-                    load_rules_from_dir(&state.rules_dir)
-                } else {
-                    load_rules_from_sources(&sources, &state.rules_dir, &disabled)
-                };
-                match compiled {
-                    Ok((rules, count)) => {
-                        *state.rules.lock().unwrap() = Some(Arc::new(rules));
-                        let mut stats = state.rule_stats.lock().unwrap();
-                        stats.total_rules = count as u64;
-                        stats.last_updated = if count > 0 { Some(chrono::Utc::now()) } else { None };
-                        log::info!("Pre-loaded {} rule file(s)", count);
-                    }
-                    Err(e) => log::info!("Rules not pre-loaded: {}", e),
-                }
-            }
-
-            // Auto-import any .ykpk packages dropped in the data directory.
-            // Each file is imported then deleted, so placing a package here
-            // (e.g. via USB on a kiosk) is a zero-interaction rule update.
-            {
-                let pkgs: Vec<_> = std::fs::read_dir(&app_data_dir)
-                    .ok()
-                    .into_iter()
-                    .flatten()
-                    .flatten()
-                    .filter(|e| {
-                        e.path().extension().and_then(|x| x.to_str()) == Some("ykpk")
-                    })
-                    .collect();
-
-                if !pkgs.is_empty() {
-                    let mut any_imported = false;
-                    for entry in &pkgs {
-                        let pkg = entry.path();
-                        match crate::parsers::packager::import_package(&pkg, &state.rules_dir) {
-                            Ok(_) => {
-                                log::info!("Auto-imported {:?}", pkg);
-                                let _ = std::fs::remove_file(&pkg);
-                                any_imported = true;
-                            }
-                            Err(e) => log::warn!("Auto-import failed for {:?}: {}", pkg, e),
-                        }
-                    }
-                    if any_imported {
-                        let sources = state.sources.lock().unwrap().clone();
-                        let disabled = state.disabled_rules.lock().unwrap().clone();
-                        let compiled = if sources.is_empty() {
-                            load_rules_from_dir(&state.rules_dir)
-                        } else {
-                            load_rules_from_sources(&sources, &state.rules_dir, &disabled)
-                        };
-                        match compiled {
-                            Ok((rules, count)) => {
-                                *state.rules.lock().unwrap() = Some(Arc::new(rules));
-                                let mut stats = state.rule_stats.lock().unwrap();
-                                stats.total_rules = count as u64;
-                                stats.last_updated = Some(chrono::Utc::now());
-                                log::info!("Recompiled after auto-import: {} rule file(s)", count);
-                            }
-                            Err(e) => log::warn!("Recompile after auto-import failed: {}", e),
-                        }
-                    }
-                }
-            }
-
             let state_arc = Arc::new(state);
             app.manage(ManagedState(state_arc.clone()));
+
+            // Compile rules off the main thread so the window appears immediately.
+            // The frontend listens for "rules-ready" to update the rule count.
+            tauri::async_runtime::spawn(compile_rules_background(
+                state_arc.clone(),
+                app.handle().clone(),
+                app_data_dir.clone(),
+            ));
 
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(crate::core::watcher::watch_mounts(handle));
@@ -220,4 +158,102 @@ pub fn run(config: KioskConfig) {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+// ──────────────────────────────────────────────
+// Background rule compilation
+// ──────────────────────────────────────────────
+
+async fn compile_rules_background(
+    state: Arc<AppState>,
+    handle: tauri::AppHandle,
+    data_dir: PathBuf,
+) {
+    let sources = state.sources.lock().unwrap().clone();
+    let disabled = state.disabled_rules.lock().unwrap().clone();
+    let rules_dir = state.rules_dir.clone();
+
+    let result = tokio::task::spawn_blocking(move || {
+        if sources.is_empty() {
+            load_rules_from_dir(&rules_dir)
+        } else {
+            load_rules_from_sources(&sources, &rules_dir, &disabled)
+        }
+    })
+    .await;
+
+    match result {
+        Ok(Ok((rules, count))) => {
+            *state.rules.lock().unwrap() = Some(Arc::new(rules));
+            {
+                let mut stats = state.rule_stats.lock().unwrap();
+                stats.total_rules = count as u64;
+                stats.last_updated = if count > 0 { Some(chrono::Utc::now()) } else { None };
+            }
+            log::info!("Pre-loaded {} rule file(s)", count);
+            let _ = handle.emit("rules-ready", count as u32);
+        }
+        Ok(Err(e)) => log::info!("Rules not pre-loaded: {}", e),
+        Err(e) => log::warn!("Rule compilation task panicked: {}", e),
+    }
+
+    // Auto-import any .ykpk packages dropped in the data directory.
+    // Each file is imported then deleted — placing a package here (e.g. via USB
+    // on a kiosk) is a zero-interaction rule update.
+    let pkgs: Vec<_> = std::fs::read_dir(&data_dir)
+        .ok()
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("ykpk"))
+        .collect();
+
+    if pkgs.is_empty() {
+        return;
+    }
+
+    let mut any_imported = false;
+    for entry in &pkgs {
+        let pkg = entry.path();
+        match crate::parsers::packager::import_package(&pkg, &state.rules_dir) {
+            Ok(_) => {
+                log::info!("Auto-imported {:?}", pkg);
+                let _ = std::fs::remove_file(&pkg);
+                any_imported = true;
+            }
+            Err(e) => log::warn!("Auto-import failed for {:?}: {}", pkg, e),
+        }
+    }
+
+    if !any_imported {
+        return;
+    }
+
+    let sources = state.sources.lock().unwrap().clone();
+    let disabled = state.disabled_rules.lock().unwrap().clone();
+    let rules_dir = state.rules_dir.clone();
+
+    let result = tokio::task::spawn_blocking(move || {
+        if sources.is_empty() {
+            load_rules_from_dir(&rules_dir)
+        } else {
+            load_rules_from_sources(&sources, &rules_dir, &disabled)
+        }
+    })
+    .await;
+
+    match result {
+        Ok(Ok((rules, count))) => {
+            *state.rules.lock().unwrap() = Some(Arc::new(rules));
+            {
+                let mut stats = state.rule_stats.lock().unwrap();
+                stats.total_rules = count as u64;
+                stats.last_updated = Some(chrono::Utc::now());
+            }
+            log::info!("Recompiled after auto-import: {} rule file(s)", count);
+            let _ = handle.emit("rules-ready", count as u32);
+        }
+        Ok(Err(e)) => log::warn!("Recompile after auto-import failed: {}", e),
+        Err(e) => log::warn!("Recompile task panicked: {}", e),
+    }
 }
