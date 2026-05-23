@@ -44,6 +44,9 @@ export class App {
   private viewContainers: Map<ViewName, HTMLElement> = new Map();
   private mountedViews = new Set<ViewName>();
 
+  // Rules compilation state — false until the backend emits rules-ready.
+  private rulesReady = false;
+
   // Auth gate — unlocked once per session after a successful password verification.
   private sessionUnlocked = false;
   private pendingView: ViewName | null = null;
@@ -222,18 +225,28 @@ export class App {
   }
 
   private async refreshRuleCount(): Promise<void> {
+    const countEl = this.mountEl.querySelector<HTMLElement>('#rule-count');
+    const dotEl = this.mountEl.querySelector<HTMLElement>('#rule-status-dot');
+
+    if (!this.rulesReady) {
+      if (countEl) countEl.textContent = 'Compiling…';
+      if (dotEl) {
+        dotEl.classList.remove('bg-success', 'bg-warning');
+        dotEl.classList.add('bg-surface-500');
+      }
+      return;
+    }
+
     try {
       const stats = await invoke<RuleStats>('get_rule_stats');
-      const countEl = this.mountEl.querySelector<HTMLElement>('#rule-count');
-      const dotEl = this.mountEl.querySelector<HTMLElement>('#rule-status-dot');
-
       if (countEl) countEl.textContent = stats.totalRules.toLocaleString();
       if (dotEl) {
         dotEl.classList.remove('bg-surface-500', 'bg-success', 'bg-warning');
         dotEl.classList.add(stats.totalRules > 0 ? 'bg-success' : 'bg-warning');
       }
+      this.dashboard.setRulesReady(stats.totalRules);
     } catch (_err) {
-      // Non-fatal; keep displaying dash
+      // Non-fatal; keep displaying current state
     }
   }
 
@@ -290,8 +303,17 @@ export class App {
     });
     this.unlisteners.push(unlistenFetchError);
 
-    const unlistenRulesReady = await listen<number>('rules-ready', () => {
-      this.refreshRuleCount();
+    const unlistenRulesReady = await listen<number>('rules-ready', (event) => {
+      const count = event.payload;
+      this.rulesReady = true;
+      const countEl = this.mountEl.querySelector<HTMLElement>('#rule-count');
+      const dotEl = this.mountEl.querySelector<HTMLElement>('#rule-status-dot');
+      if (countEl) countEl.textContent = count.toLocaleString();
+      if (dotEl) {
+        dotEl.classList.remove('bg-surface-500', 'bg-success', 'bg-warning');
+        dotEl.classList.add(count > 0 ? 'bg-success' : 'bg-warning');
+      }
+      this.dashboard.setRulesReady(count);
     });
     this.unlisteners.push(unlistenRulesReady);
   }
@@ -354,9 +376,10 @@ export class App {
       const ok = await invoke<boolean>('verify_password', { password });
       if (ok) {
         this.sessionUnlocked = true;
+        const target = this.pendingView;  // capture before closeAuthModal nulls it
         this.updateLockIcons();
         this.closeAuthModal();
-        if (this.pendingView) this.switchView(this.pendingView);
+        if (target) this.switchView(target);
       } else {
         if (err) err.classList.remove('hidden');
         if (pwd) { pwd.value = ''; pwd.focus(); }
@@ -368,13 +391,22 @@ export class App {
     }
   }
 
-  /** Update the 🔒 badges on nav items to reflect unlock state. */
+  /** Update the lock badges on nav items to reflect unlock state. */
   private updateLockIcons(): void {
     this.mountEl.querySelectorAll<HTMLButtonElement>('.nav-btn').forEach(btn => {
       const view = btn.dataset['view'] as ViewName | undefined;
       if (!view || !PROTECTED_VIEWS.has(view)) return;
-      const badge = btn.querySelector('[data-auth-badge]');
-      if (badge) badge.textContent = this.sessionUnlocked ? '🔓' : '🔒';
+      const badge = btn.querySelector<HTMLElement>('[data-auth-badge]');
+      if (!badge) return;
+      if (this.sessionUnlocked) {
+        badge.textContent = '🔓';
+        badge.classList.remove('text-surface-600');
+        badge.classList.add('text-success');
+      } else {
+        badge.textContent = '🔒';
+        badge.classList.remove('text-success');
+        badge.classList.add('text-surface-600');
+      }
     });
   }
 

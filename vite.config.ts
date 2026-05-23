@@ -3,6 +3,11 @@ import { defineConfig } from "vite";
 export default defineConfig({
   root: "src",
   clearScreen: false,
+  resolve: {
+    // Prefer TypeScript source files over any pre-compiled .js siblings so that
+    // stale tsc output in src/ (gitignored) cannot shadow the .ts files.
+    extensions: [".mts", ".ts", ".tsx", ".mjs", ".js", ".jsx", ".json"],
+  },
   server: {
     port: 1420,
     strictPort: true,
