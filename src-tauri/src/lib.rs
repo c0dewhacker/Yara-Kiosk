@@ -202,8 +202,14 @@ async fn compile_rules_background(
             log::info!("Pre-loaded {} rule file(s)", count);
             let _ = handle.emit("rules-ready", count as u32);
         }
-        Ok(Err(e)) => log::info!("Rules not pre-loaded: {}", e),
-        Err(e) => log::warn!("Rule compilation task panicked: {}", e),
+        Ok(Err(e)) => {
+            log::info!("Rules not pre-loaded: {}", e);
+            let _ = handle.emit("rules-ready", 0u32);
+        }
+        Err(e) => {
+            log::warn!("Rule compilation task panicked: {}", e);
+            let _ = handle.emit("rules-ready", 0u32);
+        }
     }
 
     // Auto-import any .ykpk packages dropped in the data directory.

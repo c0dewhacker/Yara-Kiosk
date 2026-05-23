@@ -9,6 +9,7 @@ import { reportModal } from './ReportModal';
 export class Dashboard {
   private el: HTMLElement | null = null;
   private usbDevices: Map<string, UsbDevice> = new Map();
+  private rulesCount = 0;
 
   mount(container: HTMLElement): void {
     this.el = document.createElement('div');
@@ -66,7 +67,8 @@ export class Dashboard {
           <div>
             <button
               id="scan-dir-btn"
-              class="rounded-full px-6 py-2 bg-primary hover:bg-primary-hover text-black font-semibold text-sm transition-colors"
+              disabled
+              class="rounded-full px-6 py-2 bg-primary hover:bg-primary-hover text-black font-semibold text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               SCAN DIRECTORY
             </button>
@@ -180,8 +182,9 @@ export class Dashboard {
           <div class="text-surface-500 text-xs font-mono">${escapeHtml(device.mountPoint)} · ${formatBytes(device.sizeBytes)}</div>
         </div>
         <button
-          class="usb-scan-btn rounded-full px-5 py-2 bg-primary hover:bg-primary-hover text-black font-semibold text-sm transition-colors"
+          class="usb-scan-btn rounded-full px-5 py-2 bg-primary hover:bg-primary-hover text-black font-semibold text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           data-mount="${escapeHtml(device.mountPoint)}"
+          ${this.rulesCount === 0 ? 'disabled' : ''}
         >
           SCAN THIS DRIVE
         </button>
@@ -194,6 +197,16 @@ export class Dashboard {
         const mountPoint = btn.dataset['mount'];
         if (mountPoint) this.startUsbScan(mountPoint);
       });
+    });
+  }
+
+  setRulesReady(count: number): void {
+    this.rulesCount = count;
+    if (!this.el) return;
+    const scanDirBtn = this.el.querySelector<HTMLButtonElement>('#scan-dir-btn');
+    if (scanDirBtn) scanDirBtn.disabled = count === 0;
+    this.el.querySelectorAll<HTMLButtonElement>('.usb-scan-btn').forEach(btn => {
+      btn.disabled = count === 0;
     });
   }
 
