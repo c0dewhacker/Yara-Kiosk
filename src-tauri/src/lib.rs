@@ -4,6 +4,15 @@ use std::sync::Arc;
 
 use tauri::{Emitter, Manager};
 
+/// Recover a poisoned mutex by returning ownership of the inner value.
+/// Defined once at the crate root so every submodule can use `lock!(mutex)`.
+#[macro_export]
+macro_rules! lock {
+    ($mutex:expr) => {
+        $mutex.lock().unwrap_or_else(|e| e.into_inner())
+    };
+}
+
 pub mod auth;
 pub mod commands;
 pub mod core;

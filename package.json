@@ -9,9 +9,9 @@
     "tauri": "tauri"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4",
     "@tauri-apps/api": "^2",
     "@tauri-apps/cli": "^2",
-    "@tailwindcss/postcss": "^4",
     "autoprefixer": "^10",
     "postcss": "^8",
     "tailwindcss": "^4",
@@ -19,6 +19,12 @@
     "vite": "^8"
   },
   "dependencies": {
-    "@tauri-apps/plugin-dialog": "^2.7.1"
+    "@codingame/monaco-vscode-editor-api": "^32.0.2",
+    "@tauri-apps/plugin-dialog": "^2.7.1",
+    "@virustotal/yara-x": "^1.15.0",
+    "monaco-editor": "^0.55.1",
+    "monaco-languageclient": "^10.7.0",
+    "vscode-languageclient": "^9.0.1",
+    "vscode-languageserver-protocol": "^3.17.5"
   }
 }

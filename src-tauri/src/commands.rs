@@ -13,12 +13,6 @@ use crate::core::state::{
 use crate::parsers::yaml::{load_rules_from_sources, load_rules_from_dir};
 use crate::ManagedState;
 
-/// Recover a poisoned mutex by returning ownership of the inner value.
-macro_rules! lock {
-    ($mutex:expr) => {
-        $mutex.lock().unwrap_or_else(|e| e.into_inner())
-    };
-}
 
 /// Canonicalize `path` and verify it is within `base`.
 /// Returns `Err` if the path is non-existent, non-canonical, or outside `base`.
