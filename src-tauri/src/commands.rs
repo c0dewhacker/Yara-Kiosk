@@ -84,6 +84,15 @@ pub fn reload_rules(state: &Arc<AppState>) {
     }
 }
 
+fn spawn_rules_reload(state: Arc<AppState>, app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        tokio::task::spawn_blocking(move || reload_rules(&state))
+            .await
+            .ok();
+        let _ = app.emit("rules-ready", ());
+    });
+}
+
 fn count_recursive(dir: &std::path::Path, count: &mut u64) {
     let entries = match std::fs::read_dir(dir) { Ok(e) => e, Err(_) => return };
     for entry in entries.flatten() {
@@ -197,7 +206,7 @@ pub fn add_source(
 }
 
 #[tauri::command]
-pub fn remove_source(id: String, state: State<'_, ManagedState>) -> Result<(), String> {
+pub fn remove_source(id: String, state: State<'_, ManagedState>, app: AppHandle) -> Result<(), String> {
     let mut sources = lock!(state.0.sources);
     if let Some(pos) = sources.iter().position(|s| s.id == id) {
         let source = sources.remove(pos);
@@ -212,7 +221,7 @@ pub fn remove_source(id: String, state: State<'_, ManagedState>) -> Result<(), S
         }
 
         save_sources(&state.0);
-        reload_rules(&state.0);
+        spawn_rules_reload(state.0.clone(), app);
     }
     Ok(())
 }
@@ -222,6 +231,7 @@ pub fn toggle_source(
     id: String,
     enabled: bool,
     state: State<'_, ManagedState>,
+    app: AppHandle,
 ) -> Result<(), String> {
     let mut sources = lock!(state.0.sources);
     if let Some(src) = sources.iter_mut().find(|s| s.id == id) {
@@ -229,7 +239,7 @@ pub fn toggle_source(
     }
     drop(sources);
     save_sources(&state.0);
-    reload_rules(&state.0);
+    spawn_rules_reload(state.0.clone(), app);
     Ok(())
 }
 
@@ -282,7 +292,7 @@ pub async fn fetch_source(
         }
     }
     save_sources(&state.0);
-    reload_rules(&state.0);
+    spawn_rules_reload(state.0.clone(), app);
     Ok(())
 }
 
@@ -413,6 +423,7 @@ pub fn toggle_rule(
     path: String,
     enabled: bool,
     state: State<'_, ManagedState>,
+    app: AppHandle,
 ) -> Result<(), String> {
     let canonical = std::path::Path::new(&path)
         .canonicalize()
@@ -424,18 +435,18 @@ pub fn toggle_rule(
         if enabled { disabled.remove(&canonical); } else { disabled.insert(canonical); }
     }
     save_disabled(&state.0);
-    reload_rules(&state.0);
+    spawn_rules_reload(state.0.clone(), app);
     Ok(())
 }
 
 #[tauri::command]
-pub fn delete_rule(path: String, state: State<'_, ManagedState>) -> Result<(), String> {
+pub fn delete_rule(path: String, state: State<'_, ManagedState>, app: AppHandle) -> Result<(), String> {
     let canonical = validate_path(&path, &state.0.rules_dir)?;
     let abs = canonical.to_string_lossy().to_string();
     std::fs::remove_file(&canonical).map_err(|e| e.to_string())?;
     lock!(state.0.disabled_rules).remove(&abs);
     save_disabled(&state.0);
-    reload_rules(&state.0);
+    spawn_rules_reload(state.0.clone(), app);
     Ok(())
 }
 
@@ -450,15 +461,16 @@ pub fn save_rule_content(
     path: String,
     content: String,
     state: State<'_, ManagedState>,
+    app: AppHandle,
 ) -> Result<(), String> {
     let canonical = validate_path(&path, &state.0.rules_dir)?;
     std::fs::write(&canonical, content.as_bytes()).map_err(|e| e.to_string())?;
-    reload_rules(&state.0);
+    spawn_rules_reload(state.0.clone(), app);
     Ok(())
 }
 
 #[tauri::command]
-pub fn clone_rule(path: String, state: State<'_, ManagedState>) -> Result<RuleFile, String> {
+pub fn clone_rule(path: String, state: State<'_, ManagedState>, app: AppHandle) -> Result<RuleFile, String> {
     let src = validate_path(&path, &state.0.rules_dir)?;
     let stem = src.file_stem().and_then(|s| s.to_str()).unwrap_or("rule");
     let ext  = src.extension().and_then(|s| s.to_str()).unwrap_or("yar");
@@ -492,7 +504,7 @@ pub fn clone_rule(path: String, state: State<'_, ManagedState>) -> Result<RuleFi
         .map(|s| (s.id.clone(), s.name.clone()))
         .unwrap_or_else(|| ("unknown".to_string(), "Unknown".to_string()));
 
-    reload_rules(&state.0);
+    spawn_rules_reload(state.0.clone(), app);
 
     Ok(RuleFile {
         path: abs,
@@ -522,7 +534,7 @@ pub async fn fetch_yara_forge_rules(
     )
     .await
     .map_err(|e| e.to_string())?;
-    reload_rules(&state.0);
+    spawn_rules_reload(state.0.clone(), app);
     Ok(())
 }
 
@@ -534,6 +546,7 @@ pub async fn fetch_yara_forge_rules(
 pub async fn import_rule_package(
     package_path: String,
     state: State<'_, ManagedState>,
+    app: AppHandle,
 ) -> Result<(), String> {
     let pkg_path = std::path::PathBuf::from(&package_path);
     let rules_dir = state.0.rules_dir.clone();
@@ -541,7 +554,7 @@ pub async fn import_rule_package(
         crate::parsers::packager::import_package(&pkg_path, &rules_dir)
     })
     .await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
-    reload_rules(&state.0);
+    spawn_rules_reload(state.0.clone(), app);
     Ok(())
 }
 
