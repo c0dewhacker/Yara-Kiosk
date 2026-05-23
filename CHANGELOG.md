@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.3.0](https://github.com/c0dewhacker/Yara-Kiosk/compare/v0.2.0...v0.3.0) (2026-05-23)
+
+
+### Features
+
+* Monaco YARA editor with inline validation ([a0c38aa](https://github.com/c0dewhacker/Yara-Kiosk/commit/a0c38aab8c6d17f7a1d8c25e76e5397bebc466c4))
+* replace textarea rule editor with Monaco + YARA-X inline validation ([b9e4d6f](https://github.com/c0dewhacker/Yara-Kiosk/commit/b9e4d6f9416e595b2a2958448d9a27e2a620ef57))
+
+
+### Bug Fixes
+
+* correct artifact paths and rust-cache config in release workflow ([6c7f26d](https://github.com/c0dewhacker/Yara-Kiosk/commit/6c7f26db1cda70ab1f9c981520f40ff309828472))
+* correct artifact paths in release workflow ([5a5fef1](https://github.com/c0dewhacker/Yara-Kiosk/commit/5a5fef19be959813578720e1abe1e6d376381a84))
+* move rule reload off main thread to fix Save freeze ([145d35b](https://github.com/c0dewhacker/Yara-Kiosk/commit/145d35b8af497ec7ecf036be226e858bd8ae4ddc))
+* move rule reload off the main thread to fix Save freeze ([1facc1e](https://github.com/c0dewhacker/Yara-Kiosk/commit/1facc1e1417bac1e44b50ea9a7138f52facc7681))
+* open post-scan report in-app modal instead of browser ([b2befb0](https://github.com/c0dewhacker/Yara-Kiosk/commit/b2befb0523cfbb259c34d9c052506fc03f7f0730))
+* open post-scan report in-app modal instead of browser ([53bdbac](https://github.com/c0dewhacker/Yara-Kiosk/commit/53bdbac064f397152f27f66b0f5776baf1968dd6))
+* resolve DRIVE_REMOVABLE import error in Windows build ([7b7f4e9](https://github.com/c0dewhacker/Yara-Kiosk/commit/7b7f4e95e3f02dc8a110a062c36a458176df348e))
+* resolve DRIVE_REMOVABLE import error in Windows build ([2a883f7](https://github.com/c0dewhacker/Yara-Kiosk/commit/2a883f739f7573a1915a903f90d045f65e70dd36))
+* restore invoke import removed in error ([83d346d](https://github.com/c0dewhacker/Yara-Kiosk/commit/83d346d35fa6ee40eab80dd8f1aa3632f49bbfa8))
+
 ## [0.2.0](https://github.com/c0dewhacker/Yara-Kiosk/compare/v0.1.0...v0.2.0) (2026-05-22)
 
 
