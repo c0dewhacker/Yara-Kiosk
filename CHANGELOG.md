@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.1](https://github.com/c0dewhacker/Yara-Kiosk/compare/v0.3.0...v0.3.1) (2026-05-23)
+
+
+### Bug Fixes
+
+* compiling state, auth redirect, lock icons, Open Report browser ([b71f469](https://github.com/c0dewhacker/Yara-Kiosk/commit/b71f46901fed064747e07389fde68d11ad3624a9))
+* compiling state, auth redirect, lock icons, Open Report browser ([ae1e790](https://github.com/c0dewhacker/Yara-Kiosk/commit/ae1e7905ac5dfe2dc560fbf07117ac507d9ae9c9))
+* GetDriveTypeW returns u32, not DRIVE_TYPE newtype ([557c54d](https://github.com/c0dewhacker/Yara-Kiosk/commit/557c54d4146f5dc28da411f725b7185b990ec2c1))
+* GetDriveTypeW returns u32, remove .0 field access ([f34250b](https://github.com/c0dewhacker/Yara-Kiosk/commit/f34250bf52c110216c841123ea98528ee5f33841))
+
 ## [0.3.0](https://github.com/c0dewhacker/Yara-Kiosk/compare/v0.2.0...v0.3.0) (2026-05-23)
 
 
