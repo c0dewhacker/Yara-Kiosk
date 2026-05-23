@@ -225,7 +225,7 @@ fn enumerate_removable_drives() -> Vec<String> {
                 let drive_type = unsafe {
                     GetDriveTypeW(windows::core::PCWSTR(drive_wstr.as_ptr()))
                 };
-                if drive_type.0 == DRIVE_REMOVABLE {
+                if drive_type == DRIVE_REMOVABLE {
                     drives.push(drive_str);
                 }
             }
