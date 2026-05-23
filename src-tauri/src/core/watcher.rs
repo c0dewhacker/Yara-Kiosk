@@ -199,8 +199,11 @@ pub async fn watch_mounts(app: AppHandle) {
 #[cfg(target_os = "windows")]
 fn enumerate_removable_drives() -> Vec<String> {
     use windows::Win32::Storage::FileSystem::{
-        GetDriveTypeW, GetLogicalDriveStringsW, DRIVE_REMOVABLE,
+        GetDriveTypeW, GetLogicalDriveStringsW,
     };
+    // DRIVE_REMOVABLE is not re-exported by the windows 0.58 crate under
+    // Win32_Storage_FileSystem; use the raw value (2) from the Win32 SDK docs.
+    const DRIVE_REMOVABLE: u32 = 2;
 
     // Buffer large enough for all possible drive strings.
     let mut buf = vec![0u16; 512];
@@ -222,8 +225,7 @@ fn enumerate_removable_drives() -> Vec<String> {
                 let drive_type = unsafe {
                     GetDriveTypeW(windows::core::PCWSTR(drive_wstr.as_ptr()))
                 };
-                // DRIVE_REMOVABLE == 2
-                if drive_type == DRIVE_REMOVABLE {
+                if drive_type.0 == DRIVE_REMOVABLE {
                     drives.push(drive_str);
                 }
             }
