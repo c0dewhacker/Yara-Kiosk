@@ -11,11 +11,17 @@ export default defineConfig({
     },
   },
   envPrefix: ["VITE_", "TAURI_ENV_*"],
+  worker: {
+    format: "es",
+  },
+  optimizeDeps: {
+    exclude: ["@virustotal/yara-x"],
+  },
   build: {
     outDir: "../dist",
     emptyOutDir: true,
-    target:
-      process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome105" : "safari13",
+    // Monaco workers require at least chrome80; yara-x WASM requires chrome89+.
+    target: "chrome105",
     minify: !process.env.TAURI_ENV_DEBUG ? ("oxc" as const) : false,
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
   },

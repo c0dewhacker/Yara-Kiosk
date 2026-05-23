@@ -13,6 +13,12 @@ import { escapeHtml } from '../utils/escape';
 const ROW_H = 57;
 const OVERSCAN = 25;
 
+interface EditorHandle {
+  getValue(): string;
+  setValue(value: string): void;
+  dispose(): void;
+}
+
 export class RuleManager {
   private el: HTMLElement | null = null;
   private settings: AppSettings | null = null;
@@ -20,6 +26,7 @@ export class RuleManager {
   private rules: RuleFile[] = [];
   private selected = new Set<string>();
   private editPath = '';
+  private editorHandle: EditorHandle | null = null;
   private static MAX_STATUS = 20;
 
   // Virtual scroll state
@@ -154,9 +161,9 @@ export class RuleManager {
         </div>
       </div>
 
-      <!-- Rule Editor Drawer -->
-      <div id="editor-drawer" class="hidden fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm">
-        <div class="bg-surface-800 border border-surface-600 border-b-0 rounded-t-2xl w-full max-w-4xl mx-4 p-6 flex flex-col gap-4" style="height:72vh">
+      <!-- Rule Editor Modal -->
+      <div id="editor-drawer" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-6">
+        <div class="bg-surface-800 border border-surface-600 rounded-2xl w-full max-w-5xl p-6 flex flex-col gap-4" style="height:80vh;max-height:calc(100vh - 3rem)">
           <div class="flex items-center justify-between shrink-0">
             <span id="editor-filename" class="text-white font-semibold text-sm font-mono truncate max-w-xs"></span>
             <div class="flex gap-2">
@@ -165,8 +172,7 @@ export class RuleManager {
               <button id="editor-close" class="rounded-full px-4 py-1.5 border border-surface-600 text-surface-400 hover:text-white text-xs font-semibold transition-colors">CLOSE</button>
             </div>
           </div>
-          <textarea id="editor-content"
-            class="flex-1 bg-surface-700 border border-surface-600 rounded-xl p-4 text-sm text-green-400 font-mono resize-none focus:outline-none focus:border-primary"></textarea>
+          <div id="editor-monaco" class="flex-1 min-h-0 rounded-xl overflow-hidden border border-surface-600"></div>
         </div>
       </div>
     `;
@@ -657,24 +663,34 @@ export class RuleManager {
     this.editPath = rule.path;
     const filename = this.q<HTMLElement>('#editor-filename');
     if (filename) filename.textContent = rule.name;
-    const content = this.q<HTMLTextAreaElement>('#editor-content');
-    if (content) content.value = 'Loading…';
     this.q('#editor-drawer')?.classList.remove('hidden');
+
+    let src = '// Loading…';
     try {
-      const src = await invoke<string>('get_rule_content', { path: rule.path });
-      if (content) content.value = src;
+      src = await invoke<string>('get_rule_content', { path: rule.path });
     } catch (err) {
-      if (content) content.value = `// Failed to load: ${err}`;
+      src = `// Failed to load: ${err}`;
+    }
+
+    const container = this.q<HTMLElement>('#editor-monaco');
+    if (!container) return;
+
+    if (this.editorHandle) {
+      this.editorHandle.setValue(src);
+    } else {
+      const { createYaraEditor } = await import('../editor/yara-editor');
+      this.editorHandle = await createYaraEditor(container, src);
     }
   }
 
   private closeEditor(): void {
     this.q('#editor-drawer')?.classList.add('hidden');
     this.editPath = '';
+    // Keep the editor instance alive to avoid re-initialising Monaco on next open.
   }
 
   private async saveEditorContent(): Promise<void> {
-    const content = this.q<HTMLTextAreaElement>('#editor-content')?.value ?? '';
+    const content = this.editorHandle?.getValue() ?? '';
     try {
       await invoke('save_rule_content', { path: this.editPath, content });
       toast('Rule saved.', 'success');

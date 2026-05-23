@@ -11,12 +11,6 @@ use tauri::{AppHandle, Emitter};
 use crate::core::state::{AppState, HexOffset, ScanMatch, ScanResult, ScanStatus};
 use crate::output::report;
 
-macro_rules! lock {
-    ($mutex:expr) => {
-        $mutex.lock().unwrap_or_else(|e| e.into_inner())
-    };
-}
-
 // ──────────────────────────────────────────────
 // Public entry point
 // ──────────────────────────────────────────────
