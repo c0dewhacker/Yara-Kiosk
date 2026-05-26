@@ -1,13 +1,19 @@
 import { invoke } from '@tauri-apps/api/core';
+import { save } from '@tauri-apps/plugin-dialog';
 import type { ReportEntry } from '../types/index';
 import { showToast } from '../utils/toast';
 import { escapeHtml } from '../utils/escape';
 import { reportModal } from './ReportModal';
 
+type SortField = 'date' | 'result';
+type SortDir = 'asc' | 'desc';
+
 export class ReportViewer {
   private el: HTMLElement | null = null;
   private allReports: ReportEntry[] = [];
   private filterText = '';
+  private sortField: SortField = 'date';
+  private sortDir: SortDir = 'desc';
 
   mount(container: HTMLElement): void {
     this.el = document.createElement('div');
@@ -50,9 +56,17 @@ export class ReportViewer {
           <table id="reports-table" class="w-full text-sm hidden">
             <thead class="sticky top-0 bg-surface-800">
               <tr class="border-b border-surface-600 text-xs text-surface-500 uppercase tracking-wider">
-                <th class="text-left px-5 py-3 font-medium">Date</th>
+                <th class="text-left px-5 py-3 font-medium">
+                  <button id="sort-date-btn" class="flex items-center gap-1 hover:text-white transition-colors">
+                    Date <span id="sort-date-icon" class="text-primary">▼</span>
+                  </button>
+                </th>
                 <th class="text-left px-5 py-3 font-medium">Target Path</th>
-                <th class="text-right px-5 py-3 font-medium">Result</th>
+                <th class="text-right px-5 py-3 font-medium">
+                  <button id="sort-result-btn" class="flex items-center gap-1 hover:text-white transition-colors ml-auto">
+                    Result <span id="sort-result-icon" class="opacity-30">▼</span>
+                  </button>
+                </th>
                 <th class="text-right px-5 py-3 font-medium">Actions</th>
               </tr>
             </thead>
@@ -74,6 +88,39 @@ export class ReportViewer {
       this.filterText = filterInput.value.trim().toLowerCase();
       this.renderTable();
     });
+
+    const sortDateBtn = this.el.querySelector<HTMLButtonElement>('#sort-date-btn');
+    sortDateBtn?.addEventListener('click', () => this.setSort('date'));
+
+    const sortResultBtn = this.el.querySelector<HTMLButtonElement>('#sort-result-btn');
+    sortResultBtn?.addEventListener('click', () => this.setSort('result'));
+  }
+
+  private setSort(field: SortField): void {
+    if (this.sortField === field) {
+      this.sortDir = this.sortDir === 'desc' ? 'asc' : 'desc';
+    } else {
+      this.sortField = field;
+      this.sortDir = 'desc';
+    }
+    this.updateSortIcons();
+    this.renderTable();
+  }
+
+  private updateSortIcons(): void {
+    if (!this.el) return;
+    const dateIcon = this.el.querySelector<HTMLElement>('#sort-date-icon');
+    const resultIcon = this.el.querySelector<HTMLElement>('#sort-result-icon');
+    const arrow = this.sortDir === 'desc' ? '▼' : '▲';
+
+    if (dateIcon) {
+      dateIcon.textContent = this.sortField === 'date' ? arrow : '▼';
+      dateIcon.className = this.sortField === 'date' ? 'text-primary' : 'opacity-30';
+    }
+    if (resultIcon) {
+      resultIcon.textContent = this.sortField === 'result' ? arrow : '▼';
+      resultIcon.className = this.sortField === 'result' ? 'text-primary' : 'opacity-30';
+    }
   }
 
   async refresh(): Promise<void> {
@@ -102,6 +149,18 @@ export class ReportViewer {
       if (empty) empty.classList.remove('hidden');
       showToast(`Failed to load reports: ${err}`, 'error');
     }
+  }
+
+  private sortedReports(reports: ReportEntry[]): ReportEntry[] {
+    return [...reports].sort((a, b) => {
+      let cmp = 0;
+      if (this.sortField === 'date') {
+        cmp = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      } else {
+        cmp = a.matchCount - b.matchCount;
+      }
+      return this.sortDir === 'desc' ? -cmp : cmp;
+    });
   }
 
   private renderTable(): void {
@@ -141,7 +200,7 @@ export class ReportViewer {
 
     tbody.innerHTML = '';
 
-    for (const entry of filtered) {
+    for (const entry of this.sortedReports(filtered)) {
       const row = document.createElement('tr');
       row.className = 'hover:bg-surface-700 transition-colors';
 
@@ -156,12 +215,26 @@ export class ReportViewer {
         </td>
         <td class="px-5 py-3.5 text-right">${matchBadge}</td>
         <td class="px-5 py-3.5 text-right">
-          <button
-            class="open-report-btn text-xs rounded-full px-3 py-1 border border-primary text-primary hover:bg-primary/10 transition-colors font-semibold"
-            data-path="${escapeHtml(entry.reportPath)}"
-          >
-            OPEN
-          </button>
+          <div class="flex items-center justify-end gap-2">
+            <button
+              class="open-report-btn text-xs rounded-full px-3 py-1 border border-primary text-primary hover:bg-primary/10 transition-colors font-semibold"
+              data-path="${escapeHtml(entry.reportPath)}"
+            >
+              OPEN
+            </button>
+            <button
+              class="save-report-btn text-xs rounded-full px-3 py-1 border border-surface-500 text-surface-400 hover:border-primary hover:text-primary transition-colors font-semibold"
+              data-path="${escapeHtml(entry.reportPath)}"
+            >
+              SAVE…
+            </button>
+            <button
+              class="delete-report-btn text-xs rounded-full px-3 py-1 border border-danger/50 text-danger/70 hover:border-danger hover:text-danger transition-colors font-semibold"
+              data-path="${escapeHtml(entry.reportPath)}"
+            >
+              DELETE
+            </button>
+          </div>
         </td>
       `;
 
@@ -174,5 +247,48 @@ export class ReportViewer {
         if (reportPath) reportModal.open(reportPath);
       });
     });
+
+    tbody.querySelectorAll<HTMLButtonElement>('.save-report-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const reportPath = btn.dataset['path'];
+        if (reportPath) this.saveReportAs(reportPath);
+      });
+    });
+
+    tbody.querySelectorAll<HTMLButtonElement>('.delete-report-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const reportPath = btn.dataset['path'];
+        if (reportPath) this.deleteReport(reportPath, btn);
+      });
+    });
+  }
+
+  private async saveReportAs(reportPath: string): Promise<void> {
+    try {
+      const dest = await save({
+        defaultPath: 'scan-report.html',
+        filters: [{ name: 'HTML Report', extensions: ['html'] }],
+      });
+      if (!dest) return;
+      await invoke('export_report_to_path', { reportPath, destPath: dest });
+      showToast('Report saved successfully.', 'success');
+    } catch (err) {
+      showToast(`Failed to save report: ${err}`, 'error');
+    }
+  }
+
+  private async deleteReport(reportPath: string, btn: HTMLButtonElement): Promise<void> {
+    btn.disabled = true;
+    btn.textContent = '…';
+    try {
+      await invoke('delete_report', { path: reportPath });
+      this.allReports = this.allReports.filter(r => r.reportPath !== reportPath);
+      this.renderTable();
+      showToast('Report deleted.', 'success');
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = 'DELETE';
+      showToast(`Failed to delete report: ${err}`, 'error');
+    }
   }
 }

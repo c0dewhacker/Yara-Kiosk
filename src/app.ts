@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { showToast } from './utils/toast';
 import { Dashboard } from './components/Dashboard';
 import { ScanProgress } from './components/ScanProgress';
 import { ReportViewer } from './components/ReportViewer';
@@ -316,6 +317,11 @@ export class App {
       this.dashboard.setRulesReady(count);
     });
     this.unlisteners.push(unlistenRulesReady);
+
+    const unlistenCompileError = await listen<{ error: string }>('rules-compile-error', (event) => {
+      showToast(`Rule compilation error: ${event.payload.error}`, 'error');
+    });
+    this.unlisteners.push(unlistenCompileError);
   }
 
   private registerCustomEvents(): void {

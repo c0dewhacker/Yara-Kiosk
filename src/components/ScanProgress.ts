@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { ScanProgress as ScanProgressEvent, ScanComplete } from '../types/index';
+import { save } from '@tauri-apps/plugin-dialog';
+import type { ScanProgress as ScanProgressEvent, ScanComplete, AppSettings } from '../types/index';
 import { showToast } from '../utils/toast';
 import { escapeHtml } from '../utils/escape';
 import { reportModal } from './ReportModal';
@@ -12,11 +13,18 @@ function formatDuration(ms: number): string {
   return `${mins}m ${secs}s`;
 }
 
+interface FeedEntry {
+  filePath: string;
+  ruleName: string | null;
+}
+
 export class ScanProgress {
   private el: HTMLElement | null = null;
   private currentScanId: string | null = null;
-  private matchFeedEntries: string[] = [];
+  private matchFeedEntries: FeedEntry[] = [];
+  private countdownTimer: ReturnType<typeof setInterval> | null = null;
   private static readonly MAX_FEED_ENTRIES = 50;
+  private static readonly AUTO_NAV_SECONDS = 10;
 
   mount(container: HTMLElement): void {
     this.el = document.createElement('div');
@@ -114,6 +122,20 @@ export class ScanProgress {
       ? `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-semibold bg-danger/20 text-danger">${complete.matchCount.toLocaleString()} threat${complete.matchCount !== 1 ? 's' : ''}</span>`
       : `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-semibold bg-success/20 text-success">Clean</span>`;
 
+    const skippedBadge = complete.skippedFiles > 0
+      ? `<div class="flex flex-col gap-1">
+           <div class="text-xs text-surface-500 uppercase tracking-wider font-medium">Skipped</div>
+           <div class="text-warning font-semibold text-lg">${complete.skippedFiles.toLocaleString()}</div>
+         </div>`
+      : '';
+
+    const erroredBadge = complete.erroredFiles > 0
+      ? `<div class="flex flex-col gap-1">
+           <div class="text-xs text-surface-500 uppercase tracking-wider font-medium">Errors</div>
+           <div class="text-danger font-semibold text-lg">${complete.erroredFiles.toLocaleString()}</div>
+         </div>`
+      : '';
+
     return `
       <div class="flex flex-col gap-2">
         <div class="flex items-center gap-2">
@@ -139,6 +161,8 @@ export class ScanProgress {
               <div class="text-xs text-surface-500 uppercase tracking-wider font-medium">Duration</div>
               <div class="text-white font-semibold text-lg">${formatDuration(complete.durationMs)}</div>
             </div>
+            ${skippedBadge}
+            ${erroredBadge}
           </div>
 
           <div class="flex gap-3 flex-wrap">
@@ -146,18 +170,27 @@ export class ScanProgress {
               <button
                 id="open-report-btn"
                 class="rounded-full px-6 py-2 bg-primary hover:bg-primary-hover text-black font-semibold text-sm transition-colors"
-                data-path="${complete.reportPath}"
+                data-path="${escapeHtml(complete.reportPath)}"
               >
                 OPEN REPORT
+              </button>
+              <button
+                id="save-report-btn"
+                class="rounded-full px-6 py-2 border border-primary text-primary hover:bg-primary/10 font-semibold text-sm transition-colors"
+                data-path="${escapeHtml(complete.reportPath)}"
+              >
+                SAVE REPORT…
               </button>
             ` : ''}
             <button
               id="back-to-dashboard-btn"
-              class="rounded-full px-6 py-2 border border-primary text-primary hover:bg-primary/10 font-semibold text-sm transition-colors"
+              class="rounded-full px-6 py-2 border border-surface-600 text-surface-400 hover:text-white hover:border-primary font-semibold text-sm transition-colors"
             >
               BACK TO DASHBOARD
             </button>
           </div>
+
+          <div id="auto-nav-countdown" class="hidden text-xs text-surface-500"></div>
         </div>
       </div>
 
@@ -175,6 +208,7 @@ export class ScanProgress {
   }
 
   startScan(scanId: string, targetPath: string): void {
+    this.clearCountdown();
     this.currentScanId = scanId;
     this.matchFeedEntries = [];
     if (!this.el) return;
@@ -225,14 +259,14 @@ export class ScanProgress {
     }
 
     if (p.matchCount > this.matchFeedEntries.length) {
-      this.appendMatchFeedEntry(p.currentFile);
+      this.appendMatchFeedEntry(p.currentFile, p.lastMatchedRule ?? null);
     }
   }
 
-  private appendMatchFeedEntry(filePath: string): void {
+  private appendMatchFeedEntry(filePath: string, ruleName: string | null): void {
     if (!this.el) return;
 
-    this.matchFeedEntries.unshift(filePath);
+    this.matchFeedEntries.unshift({ filePath, ruleName });
     if (this.matchFeedEntries.length > ScanProgress.MAX_FEED_ENTRIES) {
       this.matchFeedEntries = this.matchFeedEntries.slice(0, ScanProgress.MAX_FEED_ENTRIES);
     }
@@ -249,7 +283,10 @@ export class ScanProgress {
     entry.className = 'px-5 py-2.5 text-xs flex items-center gap-3 hover:bg-surface-700 transition-colors';
     entry.innerHTML = `
       <span class="text-danger flex-shrink-0 text-base leading-none">▶</span>
-      <span class="text-surface-500 truncate font-mono">${escapeHtml(filePath)}</span>
+      <div class="flex flex-col gap-0.5 min-w-0">
+        <span class="text-surface-400 truncate font-mono">${escapeHtml(filePath)}</span>
+        ${ruleName ? `<span class="text-danger/80 text-xs truncate">${escapeHtml(ruleName)}</span>` : ''}
+      </div>
     `;
 
     feed.insertBefore(entry, feed.firstChild);
@@ -261,6 +298,7 @@ export class ScanProgress {
 
   onComplete(c: ScanComplete): void {
     if (!this.el) return;
+    this.clearCountdown();
     const targetEl = this.el.querySelector<HTMLElement>('#scan-target');
     const targetPath = targetEl?.textContent ?? '';
     const savedEntries = [...this.matchFeedEntries];
@@ -270,12 +308,15 @@ export class ScanProgress {
 
     const feed = this.el.querySelector<HTMLElement>('#match-feed');
     if (feed && savedEntries.length > 0) {
-      for (const filePath of savedEntries) {
+      for (const { filePath, ruleName } of savedEntries) {
         const entry = document.createElement('div');
         entry.className = 'px-5 py-2.5 text-xs flex items-center gap-3 hover:bg-surface-700 transition-colors';
         entry.innerHTML = `
           <span class="text-danger flex-shrink-0 text-base leading-none">▶</span>
-          <span class="text-surface-500 truncate font-mono">${filePath}</span>
+          <div class="flex flex-col gap-0.5 min-w-0">
+            <span class="text-surface-400 truncate font-mono">${escapeHtml(filePath)}</span>
+            ${ruleName ? `<span class="text-danger/80 text-xs truncate">${escapeHtml(ruleName)}</span>` : ''}
+          </div>
         `;
         feed.appendChild(entry);
       }
@@ -287,15 +328,71 @@ export class ScanProgress {
       if (reportPath) reportModal.open(reportPath);
     });
 
+    const saveReportBtn = this.el.querySelector<HTMLButtonElement>('#save-report-btn');
+    saveReportBtn?.addEventListener('click', () => {
+      const reportPath = saveReportBtn.dataset['path'];
+      if (reportPath) this.saveReportAs(reportPath);
+    });
+
     const backBtn = this.el.querySelector<HTMLButtonElement>('#back-to-dashboard-btn');
     backBtn?.addEventListener('click', () => {
+      this.clearCountdown();
       document.dispatchEvent(new CustomEvent('nav-switch', { detail: { view: 'dashboard' } }));
     });
+
+    this.maybeStartAutoNavCountdown();
+  }
+
+  private async saveReportAs(reportPath: string): Promise<void> {
+    try {
+      const dest = await save({
+        defaultPath: 'scan-report.html',
+        filters: [{ name: 'HTML Report', extensions: ['html'] }],
+      });
+      if (!dest) return;
+      await invoke('export_report_to_path', { reportPath, destPath: dest });
+      showToast('Report saved successfully.', 'success');
+    } catch (err) {
+      showToast(`Failed to save report: ${err}`, 'error');
+    }
+  }
+
+  private maybeStartAutoNavCountdown(): void {
+    invoke<AppSettings>('get_settings').then(settings => {
+      if (!settings.autoNavigateDashboard || !this.el) return;
+      let remaining = ScanProgress.AUTO_NAV_SECONDS;
+      const countdownEl = this.el.querySelector<HTMLElement>('#auto-nav-countdown');
+      if (!countdownEl) return;
+      countdownEl.classList.remove('hidden');
+      countdownEl.textContent = `Navigating to Dashboard in ${remaining}s…`;
+
+      this.countdownTimer = setInterval(() => {
+        remaining -= 1;
+        if (!this.el || !countdownEl.isConnected) {
+          this.clearCountdown();
+          return;
+        }
+        if (remaining <= 0) {
+          this.clearCountdown();
+          document.dispatchEvent(new CustomEvent('nav-switch', { detail: { view: 'dashboard' } }));
+        } else {
+          countdownEl.textContent = `Navigating to Dashboard in ${remaining}s…`;
+        }
+      }, 1000);
+    }).catch(() => {});
+  }
+
+  private clearCountdown(): void {
+    if (this.countdownTimer !== null) {
+      clearInterval(this.countdownTimer);
+      this.countdownTimer = null;
+    }
   }
 
   onError(scanId: string, error: string): void {
     if (scanId !== this.currentScanId) return;
     this.currentScanId = null;
+    this.clearCountdown();
     if (!this.el) return;
 
     this.el.innerHTML = `
@@ -305,7 +402,7 @@ export class ScanProgress {
           <h2 class="text-xs font-semibold tracking-widest text-danger uppercase">Scan Error</h2>
         </div>
         <div class="bg-surface-800 border border-danger rounded-2xl p-6 flex flex-col gap-4">
-          <div class="text-white text-sm">${error}</div>
+          <div class="text-white text-sm">${escapeHtml(error)}</div>
           <div>
             <button
               id="error-back-btn"
