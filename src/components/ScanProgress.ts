@@ -15,7 +15,8 @@ function formatDuration(ms: number): string {
 
 interface FeedEntry {
   filePath: string;
-  ruleName: string | null;
+  /** Joined rule names that fired on this file, or null if the file scanned clean. */
+  rules: string | null;
 }
 
 export class ScanProgress {
@@ -258,15 +259,16 @@ export class ScanProgress {
       currentFile.textContent = truncated || '—';
     }
 
-    if (p.matchCount > this.matchFeedEntries.length) {
-      this.appendMatchFeedEntry(p.currentFile, p.lastMatchedRule ?? null);
+    if (p.matchedRules.length > 0) {
+      this.appendMatchFeedEntry(p.currentFile, p.matchedRules);
     }
   }
 
-  private appendMatchFeedEntry(filePath: string, ruleName: string | null): void {
+  private appendMatchFeedEntry(filePath: string, rules: string[]): void {
     if (!this.el) return;
 
-    this.matchFeedEntries.unshift({ filePath, ruleName });
+    const rulesLabel = rules.length > 0 ? rules.join(', ') : null;
+    this.matchFeedEntries.unshift({ filePath, rules: rulesLabel });
     if (this.matchFeedEntries.length > ScanProgress.MAX_FEED_ENTRIES) {
       this.matchFeedEntries = this.matchFeedEntries.slice(0, ScanProgress.MAX_FEED_ENTRIES);
     }
@@ -285,7 +287,7 @@ export class ScanProgress {
       <span class="text-danger flex-shrink-0 text-base leading-none">▶</span>
       <div class="flex flex-col gap-0.5 min-w-0">
         <span class="text-surface-400 truncate font-mono">${escapeHtml(filePath)}</span>
-        ${ruleName ? `<span class="text-danger/80 text-xs truncate">${escapeHtml(ruleName)}</span>` : ''}
+        ${rulesLabel ? `<span class="text-danger/80 text-xs truncate">${escapeHtml(rulesLabel)}</span>` : ''}
       </div>
     `;
 
@@ -308,14 +310,14 @@ export class ScanProgress {
 
     const feed = this.el.querySelector<HTMLElement>('#match-feed');
     if (feed && savedEntries.length > 0) {
-      for (const { filePath, ruleName } of savedEntries) {
+      for (const { filePath, rules } of savedEntries) {
         const entry = document.createElement('div');
         entry.className = 'px-5 py-2.5 text-xs flex items-center gap-3 hover:bg-surface-700 transition-colors';
         entry.innerHTML = `
           <span class="text-danger flex-shrink-0 text-base leading-none">▶</span>
           <div class="flex flex-col gap-0.5 min-w-0">
             <span class="text-surface-400 truncate font-mono">${escapeHtml(filePath)}</span>
-            ${ruleName ? `<span class="text-danger/80 text-xs truncate">${escapeHtml(ruleName)}</span>` : ''}
+            ${rules ? `<span class="text-danger/80 text-xs truncate">${escapeHtml(rules)}</span>` : ''}
           </div>
         `;
         feed.appendChild(entry);

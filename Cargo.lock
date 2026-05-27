@@ -7279,7 +7279,7 @@ dependencies = [
 
 [[package]]
 name = "yara-kiosk"
-version = "0.2.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -7287,6 +7287,7 @@ dependencies = [
  "env_logger",
  "hex",
  "log",
+ "memmap2",
  "pam",
  "rayon",
  "reqwest 0.12.28",
@@ -7302,6 +7303,7 @@ dependencies = [
  "tauri-plugin-shell",
  "tokio",
  "uuid",
+ "walkdir",
  "windows 0.58.0",
  "yara-x",
  "zip",
