@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.4.0](https://github.com/c0dewhacker/Yara-Kiosk/compare/v0.3.1...v0.4.0) (2026-05-27)
+
+
+### Features
+
+* kiosk improvements — scan guard, rule names, USB labels, report mgmt, settings ([c66158b](https://github.com/c0dewhacker/Yara-Kiosk/commit/c66158bd62bb3778bbb5be647c1621db53f37467))
+* kiosk improvements (items 4–13, 15–20) ([bbfcb0f](https://github.com/c0dewhacker/Yara-Kiosk/commit/bbfcb0f14110af3f1a403433b70b146e95a5f524))
+
+
+### Bug Fixes
+
+* **ci:** bump setup-node to v5 for Node.js 24 compatibility ([90dc57f](https://github.com/c0dewhacker/Yara-Kiosk/commit/90dc57fe27882e3171da22b1ecf4914a434d544a))
+* **ci:** bump setup-node to v5 for Node.js 24 compatibility ([fa31848](https://github.com/c0dewhacker/Yara-Kiosk/commit/fa31848a79681d086e4fa98900e8302631cdf2cf))
+* **ci:** force gh auth on Windows to fix 401 on release upload ([32163e4](https://github.com/c0dewhacker/Yara-Kiosk/commit/32163e43773dacbff6773b112e0fac5c32d81e2e))
+* **ci:** force gh auth on Windows to fix 401 on release upload ([de763f2](https://github.com/c0dewhacker/Yara-Kiosk/commit/de763f2700222d03e8b502159064f2c2d61b9844))
+
 ## [0.3.1](https://github.com/c0dewhacker/Yara-Kiosk/compare/v0.3.0...v0.3.1) (2026-05-23)
 
 
