@@ -13,6 +13,10 @@ use crate::core::state::{
 use crate::parsers::yaml::{load_rules_from_sources, load_rules_from_dir};
 use crate::ManagedState;
 
+/// Tracks the yara-x dependency declared in Cargo.toml — surfaced in the
+/// Settings About panel. Update both when bumping the crate.
+const YARA_X_VERSION: &str = "1.16";
+
 
 /// Canonicalize `path` and verify it is within `base`.
 /// Returns `Err` if the path is non-existent, non-canonical, or outside `base`.
@@ -441,10 +445,14 @@ pub fn toggle_rule(
     state: State<'_, ManagedState>,
     app: AppHandle,
 ) -> Result<(), String> {
+    // Always store the canonical path so the disabled-set can't drift between
+    // canonical and non-canonical forms across calls — a previous fallback
+    // here left rules stuck disabled when re-enabling under a different form.
     let canonical = std::path::Path::new(&path)
         .canonicalize()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or(path.clone());
+        .map_err(|e| format!("Cannot resolve rule path {}: {}", path, e))?
+        .to_string_lossy()
+        .to_string();
 
     {
         let mut disabled = lock!(state.0.disabled_rules);
@@ -607,11 +615,16 @@ pub async fn save_settings(
     settings: AppSettings,
     state: State<'_, ManagedState>,
 ) -> Result<(), String> {
-    *lock!(state.0.settings) = settings.clone();
+    // Persist to disk first via temp-and-rename so a write failure can't
+    // leave in-memory and on-disk state diverged.
     let settings_path = state.0.data_dir.join("settings.json");
+    let tmp_path = state.0.data_dir.join("settings.json.tmp");
     let json = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
-    tokio::fs::write(settings_path, json)
-        .await.map_err(|e| e.to_string())?;
+    tokio::fs::write(&tmp_path, json).await.map_err(|e| e.to_string())?;
+    tokio::fs::rename(&tmp_path, &settings_path)
+        .await
+        .map_err(|e| e.to_string())?;
+    *lock!(state.0.settings) = settings;
     Ok(())
 }
 
@@ -766,7 +779,7 @@ pub struct AppInfo {
 pub fn get_app_info(app: AppHandle) -> Result<AppInfo, String> {
     Ok(AppInfo {
         version: app.package_info().version.to_string(),
-        yara_x_version: "1.16",
+        yara_x_version: YARA_X_VERSION,
     })
 }
 
