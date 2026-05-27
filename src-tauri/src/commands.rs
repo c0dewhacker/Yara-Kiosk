@@ -26,6 +26,30 @@ fn validate_path(path: &str, base: &std::path::Path) -> Result<std::path::PathBu
     Ok(canonical)
 }
 
+/// Validate a scan target: must exist, must be a directory, must not be a
+/// system pseudo-filesystem. Returns the canonicalized path on success.
+fn validate_scan_target(path: &str) -> Result<std::path::PathBuf, String> {
+    let canonical = std::path::Path::new(path)
+        .canonicalize()
+        .map_err(|_| format!("Path does not exist or cannot be resolved: {}", path))?;
+
+    if !canonical.is_dir() {
+        return Err(format!("Scan target is not a directory: {}", canonical.display()));
+    }
+
+    // Refuse to walk kernel / pseudo-filesystems — both for performance
+    // (millions of zero-byte entries) and to prevent leaking host state.
+    const FORBIDDEN_PREFIXES: &[&str] = &["/proc", "/sys", "/dev"];
+    let canon_str = canonical.to_string_lossy();
+    for prefix in FORBIDDEN_PREFIXES {
+        if canon_str == *prefix || canon_str.starts_with(&format!("{}/", prefix)) {
+            return Err(format!("Refusing to scan system path: {}", canonical.display()));
+        }
+    }
+
+    Ok(canonical)
+}
+
 // ──────────────────────────────────────────────
 // Persistence helpers
 // ──────────────────────────────────────────────
@@ -124,6 +148,10 @@ pub async fn scan_path(
     state: State<'_, ManagedState>,
     app: AppHandle,
 ) -> Result<String, String> {
+    // Validate target before allocating any scan state.
+    let canonical = validate_scan_target(&path)?;
+    let canonical_str = canonical.display().to_string();
+
     // Item 4: prevent multiple concurrent scans.
     {
         let scans = lock!(state.0.scans);
@@ -142,7 +170,7 @@ pub async fn scan_path(
 
     tokio::spawn(async move {
         if let Err(e) = crate::core::scanner::start_scan(
-            path, scan_id_clone.clone(), state_arc, app_clone.clone(),
+            canonical_str, scan_id_clone.clone(), state_arc, app_clone.clone(),
         ).await {
             log::error!("Scan {} error: {}", scan_id_clone, e);
             let _ = app_clone.emit(

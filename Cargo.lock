@@ -7279,13 +7279,14 @@ dependencies = [
 
 [[package]]
 name = "yara-kiosk"
-version = "0.2.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "chrono",
  "dirs",
  "env_logger",
  "hex",
+ "libc",
  "log",
  "pam",
  "rayon",
