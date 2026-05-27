@@ -139,12 +139,23 @@ fn read_label(device: &str) -> Result<Option<String>, anyhow::Error> {
     Ok(None)
 }
 
-/// Read block device size from `/sys/block/<dev>/size` (sectors × 512 bytes).
+/// Read size for a block device or partition from sysfs (sectors × 512 bytes).
+/// For partitions (e.g. /dev/sdb1) reads the partition size; for whole devices reads
+/// the device size.
 #[cfg(target_os = "linux")]
 fn read_block_size(device: &str) -> Result<u64, anyhow::Error> {
+    let dev_name = device.strip_prefix("/dev/").unwrap_or(device);
     let base_dev = base_device_name(device);
     if base_dev.is_empty() { return Ok(0); }
-    let size_path = format!("/sys/block/{}/size", base_dev);
+
+    let size_path = if dev_name != base_dev {
+        // Partition: e.g. sdb1 → /sys/block/sdb/sdb1/size
+        format!("/sys/block/{}/{}/size", base_dev, dev_name)
+    } else {
+        // Whole device: e.g. sdb → /sys/block/sdb/size
+        format!("/sys/block/{}/size", base_dev)
+    };
+
     let sectors: u64 = std::fs::read_to_string(&size_path)?.trim().parse()?;
     Ok(sectors * 512)
 }
@@ -172,12 +183,13 @@ pub async fn watch_mounts(app: AppHandle) {
         // New drives.
         for drive in current.difference(&known) {
             let size_bytes = get_drive_size(drive).unwrap_or(0);
+            let label = get_volume_label(drive);
             log::info!("USB detected: {}", drive);
             let _ = app.emit(
                 "usb-detected",
                 serde_json::json!({
                     "mountPoint": drive,
-                    "label": Option::<String>::None,
+                    "label": label,
                     "sizeBytes": size_bytes,
                 }),
             );
@@ -233,6 +245,33 @@ fn enumerate_removable_drives() -> Vec<String> {
         }
     }
     drives
+}
+
+#[cfg(target_os = "windows")]
+fn get_volume_label(drive: &str) -> Option<String> {
+    use windows::Win32::Storage::FileSystem::GetVolumeInformationW;
+
+    let path: Vec<u16> = drive.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut name_buf = vec![0u16; 260];
+
+    let ok = unsafe {
+        GetVolumeInformationW(
+            windows::core::PCWSTR(path.as_ptr()),
+            Some(&mut name_buf),
+            None,
+            None,
+            None,
+            None,
+        ).is_ok()
+    };
+
+    if ok {
+        let end = name_buf.iter().position(|&c| c == 0).unwrap_or(name_buf.len());
+        let label = String::from_utf16_lossy(&name_buf[..end]);
+        if label.is_empty() { None } else { Some(label) }
+    } else {
+        None
+    }
 }
 
 #[cfg(target_os = "windows")]

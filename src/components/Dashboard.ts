@@ -38,9 +38,14 @@ export class Dashboard {
       <div>
         <h2 class="text-xs font-semibold tracking-widest text-surface-500 uppercase mb-3">USB Devices</h2>
         <div id="usb-devices-panel" class="bg-surface-800 border border-surface-600 rounded-2xl p-5">
-          <div id="usb-empty" class="text-surface-500 text-sm flex items-center gap-3">
-            <span class="text-warning opacity-70">◉</span>
-            No drives detected — waiting for USB insertion…
+          <div id="usb-empty" class="text-surface-500 text-sm flex flex-col gap-2">
+            <div class="flex items-center gap-3">
+              <span class="text-warning opacity-70">◉</span>
+              No drives detected — waiting for USB insertion…
+            </div>
+            ${(!navigator.platform.toLowerCase().includes('win') && !navigator.platform.toLowerCase().includes('linux'))
+              ? '<p class="text-xs text-warning/70 pl-6">USB detection is not supported on this platform — drives will not be detected automatically.</p>'
+              : ''}
           </div>
           <div id="usb-list" class="flex flex-col gap-3 hidden"></div>
         </div>

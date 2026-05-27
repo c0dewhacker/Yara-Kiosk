@@ -45,6 +45,8 @@ pub async fn start_scan(
                 status: ScanStatus::Running,
                 files_scanned: 0,
                 total_files,
+                skipped_files: 0,
+                errored_files: 0,
                 matches: Vec::new(),
                 report_path: None,
                 error: None,
@@ -100,16 +102,21 @@ pub async fn start_scan(
     };
 
     // ── 6. Channel for rayon→async progress ──
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<(u64, u64, u64, String)>(256);
+    // Tuple: (filesScanned, totalFiles, matchCount, currentFile, lastMatchedRule)
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<(u64, u64, u64, String, Option<String>)>(256);
 
     let matches_acc: Arc<Mutex<Vec<ScanMatch>>> = Arc::new(Mutex::new(Vec::new()));
     let files_scanned_counter = Arc::new(AtomicU64::new(0));
     let match_counter = Arc::new(AtomicU64::new(0));
+    let skipped_counter = Arc::new(AtomicU64::new(0));
+    let errored_counter = Arc::new(AtomicU64::new(0));
 
     let files_for_rayon = files.clone();
     let matches_acc_clone = matches_acc.clone();
     let files_scanned_clone = files_scanned_counter.clone();
     let match_counter_clone = match_counter.clone();
+    let skipped_clone = skipped_counter.clone();
+    let errored_clone = errored_counter.clone();
     let cancel_flag_rayon = cancel_flag.clone();
 
     // ── 7. Rayon parallel scan ────────────────
@@ -126,12 +133,14 @@ pub async fn start_scan(
                 .map(|m| m.len())
                 .unwrap_or(0);
             if file_size > max_file_size_bytes {
+                skipped_clone.fetch_add(1, Ordering::Relaxed);
                 let scanned = files_scanned_clone.fetch_add(1, Ordering::Relaxed) + 1;
                 let _ = tx.blocking_send((
                     scanned,
                     total_files,
                     match_counter_clone.load(Ordering::Relaxed),
                     file_path.display().to_string(),
+                    None,
                 ));
                 return;
             }
@@ -139,6 +148,11 @@ pub async fn start_scan(
             match scan_file_with_rules(file_path, &rules) {
                 Ok(file_matches) => {
                     let new_matches = file_matches.len() as u64;
+                    let last_rule = if new_matches > 0 {
+                        Some(file_matches[0].rule_name.clone())
+                    } else {
+                        None
+                    };
                     if new_matches > 0 {
                         lock!(matches_acc_clone).extend(file_matches);
                     }
@@ -150,16 +164,19 @@ pub async fn start_scan(
                         total_files,
                         total_matches,
                         file_path.display().to_string(),
+                        last_rule,
                     ));
                 }
                 Err(e) => {
                     log::warn!("Scan error for {:?}: {}", file_path, e);
+                    errored_clone.fetch_add(1, Ordering::Relaxed);
                     let scanned = files_scanned_clone.fetch_add(1, Ordering::Relaxed) + 1;
                     let _ = tx.blocking_send((
                         scanned,
                         total_files,
                         match_counter_clone.load(Ordering::Relaxed),
                         file_path.display().to_string(),
+                        None,
                     ));
                 }
             }
@@ -170,7 +187,7 @@ pub async fn start_scan(
     let app_progress = app.clone();
     let scan_id_progress = scan_id.clone();
     let progress_handle = tokio::spawn(async move {
-        while let Some((files_scanned, total, match_count, current_file)) = rx.recv().await {
+        while let Some((files_scanned, total, match_count, current_file, last_rule)) = rx.recv().await {
             let _ = app_progress.emit(
                 "scan-progress",
                 serde_json::json!({
@@ -179,6 +196,7 @@ pub async fn start_scan(
                     "totalFiles": total,
                     "matchCount": match_count,
                     "currentFile": current_file,
+                    "lastMatchedRule": last_rule,
                 }),
             );
         }
@@ -200,6 +218,8 @@ pub async fn start_scan(
     let all_matches: Vec<ScanMatch> = lock!(matches_acc).drain(..).collect();
     let total_scanned = files_scanned_counter.load(Ordering::Relaxed);
     let total_matches = all_matches.len() as u64;
+    let total_skipped = skipped_counter.load(Ordering::Relaxed);
+    let total_errored = errored_counter.load(Ordering::Relaxed);
     let completed_at = Utc::now();
     let duration_ms = (completed_at - scan_start).num_milliseconds().unsigned_abs();
 
@@ -212,6 +232,8 @@ pub async fn start_scan(
         status: final_status.clone(),
         files_scanned: total_scanned,
         total_files,
+        skipped_files: total_skipped,
+        errored_files: total_errored,
         matches: all_matches.clone(),
         report_path: None,
         error: None,
@@ -236,6 +258,8 @@ pub async fn start_scan(
         if let Some(s) = scans.get_mut(&scan_id) {
             s.status = final_status.clone();
             s.files_scanned = total_scanned;
+            s.skipped_files = total_skipped;
+            s.errored_files = total_errored;
             s.matches = all_matches;
             s.completed_at = Some(completed_at);
             s.report_path = report_path.clone();
@@ -272,6 +296,8 @@ pub async fn start_scan(
                 "reportPath": report_path.unwrap_or_default(),
                 "matchCount": total_matches,
                 "filesScanned": total_scanned,
+                "skippedFiles": total_skipped,
+                "erroredFiles": total_errored,
                 "durationMs": duration_ms,
             }),
         );

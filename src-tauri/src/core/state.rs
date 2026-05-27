@@ -16,6 +16,15 @@ pub struct AppSettings {
     pub auto_start_scans: bool,
     pub gti_api_key: Option<String>,
     pub max_file_size_mb: u64,
+    /// Navigate back to Dashboard automatically after a scan completes.
+    #[serde(default)]
+    pub auto_navigate_dashboard: bool,
+    /// Delete reports older than this many days on startup (0 = keep forever).
+    #[serde(default)]
+    pub report_retention_days: u64,
+    /// Auto-fetch rule sources older than this many days on startup (0 = disabled).
+    #[serde(default)]
+    pub rule_refresh_interval_days: u64,
 }
 
 impl Default for AppSettings {
@@ -24,6 +33,9 @@ impl Default for AppSettings {
             auto_start_scans: false,
             gti_api_key: None,
             max_file_size_mb: 100,
+            auto_navigate_dashboard: false,
+            report_retention_days: 0,
+            rule_refresh_interval_days: 0,
         }
     }
 }
@@ -184,6 +196,8 @@ pub struct ScanResult {
     pub status: ScanStatus,
     pub files_scanned: u64,
     pub total_files: u64,
+    pub skipped_files: u64,
+    pub errored_files: u64,
     pub matches: Vec<ScanMatch>,
     pub report_path: Option<String>,
     pub error: Option<String>,

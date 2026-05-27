@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::core::state::{
     AppSettings, AppState, ReportEntry, RuleFile, RuleSource, RuleSourceConfig, RuleStats,
-    ScanResult, SourceKind, YaraForgeTier,
+    ScanResult, ScanStatus, SourceKind, YaraForgeTier,
 };
 use crate::parsers::yaml::{load_rules_from_sources, load_rules_from_dir};
 use crate::ManagedState;
@@ -124,6 +124,14 @@ pub async fn scan_path(
     state: State<'_, ManagedState>,
     app: AppHandle,
 ) -> Result<String, String> {
+    // Item 4: prevent multiple concurrent scans.
+    {
+        let scans = lock!(state.0.scans);
+        if scans.values().any(|s| s.status == ScanStatus::Running) {
+            return Err("A scan is already in progress. Wait for it to complete or cancel it first.".to_string());
+        }
+    }
+
     let scan_id = Uuid::new_v4().to_string();
     let cancel_flag = Arc::new(AtomicBool::new(false));
     lock!(state.0.cancel_flags).insert(scan_id.clone(), cancel_flag);
@@ -243,14 +251,14 @@ pub fn toggle_source(
     Ok(())
 }
 
-#[tauri::command]
-pub async fn fetch_source(
-    id: String,
-    state: State<'_, ManagedState>,
-    app: AppHandle,
+/// Core fetch logic usable both from the command and startup auto-refresh.
+pub async fn do_fetch_source(
+    id: &str,
+    state: &Arc<AppState>,
+    app: &AppHandle,
 ) -> Result<(), String> {
     let source = {
-        let sources = lock!(state.0.sources);
+        let sources = lock!(state.sources);
         sources.iter().find(|s| s.id == id).cloned()
             .ok_or_else(|| format!("Source {} not found", id))?
     };
@@ -258,21 +266,21 @@ pub async fn fetch_source(
     match &source.kind {
         SourceKind::YaraForge { tier } => {
             let tier = tier.clone();
-            let rules_dir = state.0.rules_dir.clone();
-            crate::net::yara_forge::fetch_yara_forge_rules(&tier, &rules_dir, &app)
+            let rules_dir = state.rules_dir.clone();
+            crate::net::yara_forge::fetch_yara_forge_rules(&tier, &rules_dir, app)
                 .await
                 .map_err(|e| e.to_string())?;
         }
         SourceKind::GoogleThreatIntelligence { filter } => {
-            let api_key = lock!(state.0.settings).gti_api_key.clone()
+            let api_key = lock!(state.settings).gti_api_key.clone()
                 .ok_or("No Google Threat Intelligence API key configured")?;
-            let rules_dir = state.0.rules_dir.clone();
+            let rules_dir = state.rules_dir.clone();
             crate::net::gti::fetch_gti_rules(&api_key, filter.as_deref(), &rules_dir, app.clone())
                 .await
                 .map_err(|e| e.to_string())?;
         }
         SourceKind::Url { url } => {
-            fetch_url_source(&id, url, &state.0.rules_dir, &app)
+            fetch_url_source(id, url, &state.rules_dir, app)
                 .await
                 .map_err(|e| e.to_string())?;
         }
@@ -281,19 +289,27 @@ pub async fn fetch_source(
         }
     }
 
-    // Update fetched_at and rule_count on the source.
     {
-        let mut sources = lock!(state.0.sources);
+        let mut sources = lock!(state.sources);
         if let Some(src) = sources.iter_mut().find(|s| s.id == id) {
             src.fetched_at = Some(Utc::now());
-            if let Some(dir) = src.effective_dir(&state.0.rules_dir) {
+            if let Some(dir) = src.effective_dir(&state.rules_dir) {
                 src.rule_count = count_in_dir(&dir);
             }
         }
     }
-    save_sources(&state.0);
-    spawn_rules_reload(state.0.clone(), app);
+    save_sources(state);
+    spawn_rules_reload(state.clone(), app.clone());
     Ok(())
+}
+
+#[tauri::command]
+pub async fn fetch_source(
+    id: String,
+    state: State<'_, ManagedState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    do_fetch_source(&id, &state.0, &app).await
 }
 
 async fn fetch_url_source(
@@ -644,6 +660,28 @@ pub fn get_report_html(path: String, state: State<'_, ManagedState>) -> Result<S
     std::fs::read_to_string(&canonical).map_err(|e| e.to_string())
 }
 
+/// Delete a report HTML file from disk.
+#[tauri::command]
+pub fn delete_report(path: String, state: State<'_, ManagedState>) -> Result<(), String> {
+    let canonical = validate_path(&path, &state.0.reports_dir)?;
+    std::fs::remove_file(&canonical).map_err(|e| e.to_string())
+}
+
+/// Copy a report file to a user-chosen destination (e.g. a USB drive).
+#[tauri::command]
+pub async fn export_report_to_path(
+    report_path: String,
+    dest_path: String,
+    state: State<'_, ManagedState>,
+) -> Result<(), String> {
+    let canonical = validate_path(&report_path, &state.0.reports_dir)?;
+    if let Some(parent) = std::path::Path::new(&dest_path).parent() {
+        tokio::fs::create_dir_all(parent).await.map_err(|e| e.to_string())?;
+    }
+    tokio::fs::copy(&canonical, &dest_path).await.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn open_report(
     report_path: String,
@@ -656,6 +694,80 @@ pub async fn open_report(
         .open_path(canonical.to_str().ok_or("Invalid UTF-8 in path")?, None::<&str>)
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Delete all report HTML files older than the configured retention period.
+pub fn prune_old_reports(state: &AppState) {
+    let retention_days = lock!(state.settings).report_retention_days;
+    if retention_days == 0 {
+        return;
+    }
+    let cutoff = Utc::now() - chrono::Duration::days(retention_days as i64);
+    let entries = match std::fs::read_dir(&state.reports_dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("html") {
+            continue;
+        }
+        let modified = std::fs::metadata(&path)
+            .and_then(|m| m.modified())
+            .map(chrono::DateTime::<Utc>::from)
+            .unwrap_or(Utc::now());
+        if modified < cutoff {
+            if let Err(e) = std::fs::remove_file(&path) {
+                log::warn!("Failed to prune report {:?}: {}", path, e);
+            } else {
+                log::info!("Pruned old report: {:?}", path);
+            }
+        }
+    }
+}
+
+/// Update the GTI source's filter string and persist.
+#[tauri::command]
+pub fn update_gti_filter(filter: Option<String>, state: State<'_, ManagedState>) -> Result<(), String> {
+    let mut sources = lock!(state.0.sources);
+    if let Some(src) = sources.iter_mut().find(|s| matches!(s.kind, SourceKind::GoogleThreatIntelligence { .. })) {
+        src.kind = SourceKind::GoogleThreatIntelligence { filter };
+    }
+    drop(sources);
+    save_sources(&state.0);
+    Ok(())
+}
+
+/// Return the GTI source's current filter string (if any).
+#[tauri::command]
+pub fn get_gti_filter(state: State<'_, ManagedState>) -> Result<Option<String>, String> {
+    let sources = lock!(state.0.sources);
+    let filter = sources.iter()
+        .find_map(|s| {
+            if let SourceKind::GoogleThreatIntelligence { filter } = &s.kind {
+                Some(filter.clone())
+            } else {
+                None
+            }
+        })
+        .flatten();
+    Ok(filter)
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppInfo {
+    pub version: String,
+    pub yara_x_version: &'static str,
+}
+
+/// Return version information for display in the Settings About section.
+#[tauri::command]
+pub fn get_app_info(app: AppHandle) -> Result<AppInfo, String> {
+    Ok(AppInfo {
+        version: app.package_info().version.to_string(),
+        yara_x_version: "1.16",
+    })
 }
 
 /// Parse the `<script id="scan-meta">` JSON block embedded in each report.

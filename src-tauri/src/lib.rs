@@ -132,6 +132,15 @@ pub fn run(config: KioskConfig) {
                 app_data_dir.clone(),
             ));
 
+            // Prune old reports based on retention settings.
+            crate::commands::prune_old_reports(&state_arc);
+
+            // Auto-refresh rule sources that are older than the configured interval.
+            tauri::async_runtime::spawn(auto_refresh_stale_sources(
+                state_arc.clone(),
+                app.handle().clone(),
+            ));
+
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(crate::core::watcher::watch_mounts(handle));
 
@@ -151,6 +160,8 @@ pub fn run(config: KioskConfig) {
             commands::list_reports,
             commands::get_report_html,
             commands::open_report,
+            commands::delete_report,
+            commands::export_report_to_path,
             commands::list_sources,
             commands::add_source,
             commands::remove_source,
@@ -163,6 +174,9 @@ pub fn run(config: KioskConfig) {
             commands::save_rule_content,
             commands::clone_rule,
             commands::get_data_dir,
+            commands::get_app_info,
+            commands::get_gti_filter,
+            commands::update_gti_filter,
             commands::verify_password,
         ])
         .run(tauri::generate_context!())
@@ -203,11 +217,15 @@ async fn compile_rules_background(
             let _ = handle.emit("rules-ready", count as u32);
         }
         Ok(Err(e)) => {
-            log::info!("Rules not pre-loaded: {}", e);
+            let msg = e.to_string();
+            log::warn!("Rules not pre-loaded: {}", msg);
+            let _ = handle.emit("rules-compile-error", serde_json::json!({ "error": msg }));
             let _ = handle.emit("rules-ready", 0u32);
         }
         Err(e) => {
-            log::warn!("Rule compilation task panicked: {}", e);
+            let msg = format!("Rule compilation task panicked: {}", e);
+            log::warn!("{}", msg);
+            let _ = handle.emit("rules-compile-error", serde_json::json!({ "error": msg }));
             let _ = handle.emit("rules-ready", 0u32);
         }
     }
@@ -270,5 +288,32 @@ async fn compile_rules_background(
         }
         Ok(Err(e)) => log::warn!("Recompile after auto-import failed: {}", e),
         Err(e) => log::warn!("Recompile task panicked: {}", e),
+    }
+}
+
+// ──────────────────────────────────────────────
+// Startup: auto-refresh stale rule sources
+// ──────────────────────────────────────────────
+
+async fn auto_refresh_stale_sources(state: Arc<AppState>, handle: tauri::AppHandle) {
+    let interval_days = lock!(state.settings).rule_refresh_interval_days;
+    if interval_days == 0 {
+        return;
+    }
+
+    let cutoff = chrono::Utc::now() - chrono::Duration::days(interval_days as i64);
+    let stale_ids: Vec<String> = {
+        let sources = lock!(state.sources);
+        sources.iter()
+            .filter(|s| s.enabled && s.fetched_at.map(|t| t < cutoff).unwrap_or(true))
+            .map(|s| s.id.clone())
+            .collect()
+    };
+
+    for id in &stale_ids {
+        log::info!("Auto-refreshing stale rule source: {}", id);
+        if let Err(e) = crate::commands::do_fetch_source(id, &state, &handle).await {
+            log::warn!("Auto-refresh failed for source {}: {}", id, e);
+        }
     }
 }

@@ -2,6 +2,14 @@ export interface AppSettings {
   autoStartScans: boolean;
   gtiApiKey: string | null;
   maxFileSizeMb: number;
+  autoNavigateDashboard: boolean;
+  reportRetentionDays: number;
+  ruleRefreshIntervalDays: number;
+}
+
+export interface AppInfo {
+  version: string;
+  yaraXVersion: string;
 }
 
 export interface RuleStats {
@@ -29,6 +37,7 @@ export interface ScanProgress {
   totalFiles: number;
   matchCount: number;
   currentFile: string;
+  lastMatchedRule: string | null;
 }
 
 export interface ScanComplete {
@@ -36,6 +45,8 @@ export interface ScanComplete {
   reportPath: string;
   matchCount: number;
   filesScanned: number;
+  skippedFiles: number;
+  erroredFiles: number;
   durationMs: number;
 }
 
