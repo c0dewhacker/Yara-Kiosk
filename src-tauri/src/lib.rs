@@ -267,6 +267,20 @@ async fn auto_refresh_stale_sources(state: Arc<AppState>, handle: tauri::AppHand
             .collect()
     };
 
+    if stale_ids.is_empty() {
+        return;
+    }
+
+    // Delay so the UI is interactive before we kick off potentially large
+    // HTTP downloads (YARA Forge zips can be hundreds of MB on a metered
+    // connection). A user who doesn't want this can disable the interval
+    // in Settings before the timer fires.
+    log::info!(
+        "Auto-refresh will fetch {} stale source(s) in 30s",
+        stale_ids.len()
+    );
+    tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
+
     for id in &stale_ids {
         log::info!("Auto-refreshing stale rule source: {}", id);
         if let Err(e) = crate::commands::do_fetch_source(id, &state, &handle).await {
