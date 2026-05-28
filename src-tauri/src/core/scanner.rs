@@ -1,12 +1,19 @@
 use std::collections::HashMap;
+use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
 use chrono::Utc;
+use memmap2::Mmap;
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter};
+use walkdir::WalkDir;
+
+/// Cap the directory traversal depth so a pathological tree (or symlink farm)
+/// can't blow the stack or run for an absurdly long time.
+const MAX_WALK_DEPTH: usize = 64;
 
 use crate::core::state::{AppState, HexOffset, ScanMatch, ScanResult, ScanStatus};
 use crate::output::report;
@@ -102,8 +109,12 @@ pub async fn start_scan(
     };
 
     // ── 6. Channel for rayon→async progress ──
-    // Tuple: (filesScanned, totalFiles, matchCount, currentFile, lastMatchedRule)
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<(u64, u64, u64, String, Option<String>)>(256);
+    // Tuple: (filesScanned, totalFiles, matchCount, currentFile, matchedRules)
+    // matchedRules is the list of rule names that fired on currentFile (empty
+    // if none) — gives the live feed the full picture instead of just the
+    // first match.
+    let (tx, mut rx) =
+        tokio::sync::mpsc::channel::<(u64, u64, u64, String, Vec<String>)>(256);
 
     let matches_acc: Arc<Mutex<Vec<ScanMatch>>> = Arc::new(Mutex::new(Vec::new()));
     let files_scanned_counter = Arc::new(AtomicU64::new(0));
@@ -140,7 +151,7 @@ pub async fn start_scan(
                     total_files,
                     match_counter_clone.load(Ordering::Relaxed),
                     file_path.display().to_string(),
-                    None,
+                    Vec::new(),
                 ));
                 return;
             }
@@ -148,11 +159,10 @@ pub async fn start_scan(
             match scan_file_with_rules(file_path, &rules) {
                 Ok(file_matches) => {
                     let new_matches = file_matches.len() as u64;
-                    let last_rule = if new_matches > 0 {
-                        Some(file_matches[0].rule_name.clone())
-                    } else {
-                        None
-                    };
+                    let matched_rules: Vec<String> = file_matches
+                        .iter()
+                        .map(|m| m.rule_name.clone())
+                        .collect();
                     if new_matches > 0 {
                         lock!(matches_acc_clone).extend(file_matches);
                     }
@@ -164,7 +174,7 @@ pub async fn start_scan(
                         total_files,
                         total_matches,
                         file_path.display().to_string(),
-                        last_rule,
+                        matched_rules,
                     ));
                 }
                 Err(e) => {
@@ -176,7 +186,7 @@ pub async fn start_scan(
                         total_files,
                         match_counter_clone.load(Ordering::Relaxed),
                         file_path.display().to_string(),
-                        None,
+                        Vec::new(),
                     ));
                 }
             }
@@ -187,7 +197,7 @@ pub async fn start_scan(
     let app_progress = app.clone();
     let scan_id_progress = scan_id.clone();
     let progress_handle = tokio::spawn(async move {
-        while let Some((files_scanned, total, match_count, current_file, last_rule)) = rx.recv().await {
+        while let Some((files_scanned, total, match_count, current_file, matched_rules)) = rx.recv().await {
             let _ = app_progress.emit(
                 "scan-progress",
                 serde_json::json!({
@@ -196,7 +206,7 @@ pub async fn start_scan(
                     "totalFiles": total,
                     "matchCount": match_count,
                     "currentFile": current_file,
-                    "lastMatchedRule": last_rule,
+                    "matchedRules": matched_rules,
                 }),
             );
         }
@@ -310,52 +320,76 @@ pub async fn start_scan(
 // File utilities
 // ──────────────────────────────────────────────
 
-/// Recursively collect all regular files under `root`.
+/// Recursively collect all regular files under `root`, capping depth and
+/// refusing to follow symlinks. WalkDir handles both safely without recursion.
 pub fn collect_files(root: &Path) -> Vec<PathBuf> {
-    let mut result = Vec::new();
-    collect_files_inner(root, &mut result);
-    result
+    WalkDir::new(root)
+        .follow_links(false)
+        .max_depth(MAX_WALK_DEPTH)
+        .into_iter()
+        .filter_map(|res| match res {
+            Ok(entry) => Some(entry),
+            Err(e) => {
+                log::warn!("Walk error: {}", e);
+                None
+            }
+        })
+        .filter(|entry| entry.file_type().is_file())
+        .map(|entry| entry.into_path())
+        .collect()
 }
 
-fn collect_files_inner(dir: &Path, acc: &mut Vec<PathBuf>) {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(e) => {
-            log::warn!("Cannot read directory {:?}: {}", dir, e);
-            return;
-        }
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        // Skip symlinks to avoid loops.
-        if path.is_symlink() {
-            continue;
-        }
-        if path.is_dir() {
-            collect_files_inner(&path, acc);
-        } else if path.is_file() {
-            acc.push(path);
-        }
+/// Memory-map a file for scanning. Returns `None` for zero-byte files (no
+/// match possible) and on mmap failure (caller falls back to read).
+fn try_mmap(path: &Path) -> Option<Mmap> {
+    let file = File::open(path).ok()?;
+    let meta = file.metadata().ok()?;
+    if meta.len() == 0 {
+        return None;
     }
+    // SAFETY: we don't share the mapping with other processes that might
+    // truncate the file concurrently; if they do, accessing past the new EOF
+    // raises SIGBUS, which is no worse than std::fs::read panicking on the
+    // same race.
+    unsafe { Mmap::map(&file) }.ok()
 }
 
 /// Scan a single file against compiled YARA-X rules.
+///
+/// Uses memory-mapped IO so peak RSS stays bounded regardless of file size —
+/// previously every rayon worker allocated `min(file_size, max_file_size_mb)`
+/// of heap per file, which scaled with both core count and the configured
+/// size cap.
 pub fn scan_file_with_rules(
     path: &Path,
     rules: &yara_x::Rules,
 ) -> Result<Vec<ScanMatch>, anyhow::Error> {
-    let bytes = std::fs::read(path).context("Reading file for scanning")?;
+    let mmap = try_mmap(path);
+    // Fall back to read() for tiny / unmappable files (e.g. empty, special).
+    let owned_bytes: Option<Vec<u8>> = if mmap.is_none() {
+        match std::fs::read(path) {
+            Ok(b) => Some(b),
+            Err(e) => return Err(anyhow::Error::new(e).context("Reading file for scanning")),
+        }
+    } else {
+        None
+    };
+    let bytes: &[u8] = match (&mmap, &owned_bytes) {
+        (Some(m), _) => &m[..],
+        (None, Some(v)) => &v[..],
+        _ => &[][..],
+    };
 
-    // Compute SHA-256 hash.
+    // Compute SHA-256 hash — streamed over the mmap, no extra allocation.
     let sha256 = {
         let mut hasher = Sha256::new();
-        hasher.update(&bytes);
+        hasher.update(bytes);
         hex::encode(hasher.finalize())
     };
 
-    // Create a scanner and scan the in-memory bytes.
+    // Create a scanner and scan the mapped bytes.
     let mut scanner = yara_x::Scanner::new(rules);
-    let results = scanner.scan(&bytes).context("yara-x scan failed")?;
+    let results = scanner.scan(bytes).context("yara-x scan failed")?;
 
     let mut scan_matches = Vec::new();
 

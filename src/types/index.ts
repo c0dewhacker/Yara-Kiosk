@@ -37,7 +37,8 @@ export interface ScanProgress {
   totalFiles: number;
   matchCount: number;
   currentFile: string;
-  lastMatchedRule: string | null;
+  /** Rule names that matched on currentFile (empty when none). */
+  matchedRules: string[];
 }
 
 export interface ScanComplete {

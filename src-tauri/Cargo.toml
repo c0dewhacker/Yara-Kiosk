@@ -21,6 +21,8 @@ serde_json = "1"
 serde_yaml = "0.9"
 tokio = { version = "1", features = ["full"] }
 rayon = "1"
+walkdir = "2"
+memmap2 = "0.9"
 yara-x = "1.16"
 zip = { version = "8", default-features = false, features = ["deflate"] }
 sha2 = "0.10"
