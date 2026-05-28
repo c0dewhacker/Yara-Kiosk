@@ -6,17 +6,30 @@ use chrono::Utc;
 use crate::core::state::{ScanMatch, ScanResult};
 
 /// Generate a standalone HTML security report and return its absolute path.
+/// Also writes a small `.json` sidecar with the metadata needed by the
+/// reports list so `list_reports` doesn't have to parse the HTML.
 pub fn generate_report(result: &ScanResult, reports_dir: &Path) -> Result<String, anyhow::Error> {
-    let timestamp = result
-        .completed_at
-        .unwrap_or_else(Utc::now)
-        .format("%Y%m%d_%H%M%S");
+    let completed_at = result.completed_at.unwrap_or_else(Utc::now);
+    let timestamp = completed_at.format("%Y%m%d_%H%M%S");
     let filename = format!("report_{}_{}.html", result.scan_id, timestamp);
     let report_path = reports_dir.join(&filename);
 
     let html = build_html(result);
     std::fs::write(&report_path, &html)
         .with_context(|| format!("Writing report to {:?}", report_path))?;
+
+    // Sidecar metadata — read by list_reports instead of scraping the HTML.
+    let sidecar = serde_json::json!({
+        "scanId": result.scan_id,
+        "targetPath": result.target_path,
+        "createdAt": completed_at.to_rfc3339(),
+        "matchCount": result.matches.len() as u64,
+    });
+    let sidecar_path = report_path.with_extension("json");
+    if let Err(e) = std::fs::write(&sidecar_path, sidecar.to_string()) {
+        // Non-fatal: list_reports has a fallback path that re-parses the HTML.
+        log::warn!("Failed to write report sidecar {:?}: {}", sidecar_path, e);
+    }
 
     log::info!("Report generated: {:?}", report_path);
     Ok(report_path.display().to_string())
