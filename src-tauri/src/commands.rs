@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::core::state::{
     AppSettings, AppState, ReportEntry, RuleFile, RuleSource, RuleSourceConfig, RuleStats,
-    ScanResult, ScanStatus, SourceKind, YaraForgeTier,
+    ScanResult, ScanStatus, SourceKind,
 };
 use crate::parsers::yaml::{load_rules_from_sources, load_rules_from_dir};
 use crate::ManagedState;
@@ -81,7 +81,10 @@ pub fn save_disabled(state: &AppState) {
 // Rule reload
 // ──────────────────────────────────────────────
 
-pub fn reload_rules(state: &Arc<AppState>) {
+/// Recompile rules from the configured sources and publish to state.
+/// Returns the number of rule files compiled, or the underlying error
+/// message (also logged at error level) on failure.
+pub fn reload_rules(state: &Arc<AppState>) -> Result<usize, String> {
     let sources = lock!(state.sources).clone();
     let disabled = lock!(state.disabled_rules).clone();
 
@@ -103,8 +106,12 @@ pub fn reload_rules(state: &Arc<AppState>) {
                 fetched_at: s.fetched_at,
             }).collect();
             log::info!("Rules reloaded: {} file(s) compiled", count);
+            Ok(count)
         }
-        Err(e) => log::error!("Failed to reload rules: {}", e),
+        Err(e) => {
+            log::error!("Failed to reload rules: {}", e);
+            Err(e.to_string())
+        }
     }
 }
 
@@ -559,27 +566,6 @@ pub fn clone_rule(path: String, state: State<'_, ManagedState>, app: AppHandle) 
         size_bytes,
         modified_at,
     })
-}
-
-// ──────────────────────────────────────────────
-// Legacy fetch commands (kept for compatibility)
-// ──────────────────────────────────────────────
-
-#[tauri::command]
-pub async fn fetch_yara_forge_rules(
-    state: State<'_, ManagedState>,
-    app: AppHandle,
-) -> Result<(), String> {
-    let rules_dir = state.0.rules_dir.clone();
-    crate::net::yara_forge::fetch_yara_forge_rules(
-        &YaraForgeTier::Core,
-        &rules_dir,
-        &app,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-    spawn_rules_reload(state.0.clone(), app);
-    Ok(())
 }
 
 // ──────────────────────────────────────────────

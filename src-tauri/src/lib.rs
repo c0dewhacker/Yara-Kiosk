@@ -21,7 +21,6 @@ pub mod output;
 pub mod parsers;
 
 use core::state::{AppSettings, AppState, RuleSourceConfig, default_sources};
-use parsers::yaml::{load_rules_from_sources, load_rules_from_dir};
 
 pub struct ManagedState(pub Arc<AppState>);
 
@@ -151,7 +150,6 @@ pub fn run(config: KioskConfig) {
             commands::scan_usb,
             commands::cancel_scan,
             commands::get_scan_result,
-            commands::fetch_yara_forge_rules,
             commands::import_rule_package,
             commands::export_rule_package,
             commands::get_rule_stats,
@@ -192,43 +190,7 @@ async fn compile_rules_background(
     handle: tauri::AppHandle,
     data_dir: PathBuf,
 ) {
-    let sources = state.sources.lock().unwrap().clone();
-    let disabled = state.disabled_rules.lock().unwrap().clone();
-    let rules_dir = state.rules_dir.clone();
-
-    let result = tokio::task::spawn_blocking(move || {
-        if sources.is_empty() {
-            load_rules_from_dir(&rules_dir)
-        } else {
-            load_rules_from_sources(&sources, &rules_dir, &disabled)
-        }
-    })
-    .await;
-
-    match result {
-        Ok(Ok((rules, count))) => {
-            *state.rules.lock().unwrap() = Some(Arc::new(rules));
-            {
-                let mut stats = state.rule_stats.lock().unwrap();
-                stats.total_rules = count as u64;
-                stats.last_updated = if count > 0 { Some(chrono::Utc::now()) } else { None };
-            }
-            log::info!("Pre-loaded {} rule file(s)", count);
-            let _ = handle.emit("rules-ready", count as u32);
-        }
-        Ok(Err(e)) => {
-            let msg = e.to_string();
-            log::warn!("Rules not pre-loaded: {}", msg);
-            let _ = handle.emit("rules-compile-error", serde_json::json!({ "error": msg }));
-            let _ = handle.emit("rules-ready", 0u32);
-        }
-        Err(e) => {
-            let msg = format!("Rule compilation task panicked: {}", e);
-            log::warn!("{}", msg);
-            let _ = handle.emit("rules-compile-error", serde_json::json!({ "error": msg }));
-            let _ = handle.emit("rules-ready", 0u32);
-        }
-    }
+    compile_and_emit(&state, &handle).await;
 
     // Auto-import any .ykpk packages dropped in the data directory.
     // Each file is imported then deleted — placing a package here (e.g. via USB
@@ -240,7 +202,6 @@ async fn compile_rules_background(
         .flatten()
         .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("ykpk"))
         .collect();
-
     if pkgs.is_empty() {
         return;
     }
@@ -257,37 +218,33 @@ async fn compile_rules_background(
             Err(e) => log::warn!("Auto-import failed for {:?}: {}", pkg, e),
         }
     }
-
     if !any_imported {
         return;
     }
 
-    let sources = state.sources.lock().unwrap().clone();
-    let disabled = state.disabled_rules.lock().unwrap().clone();
-    let rules_dir = state.rules_dir.clone();
+    compile_and_emit(&state, &handle).await;
+}
 
-    let result = tokio::task::spawn_blocking(move || {
-        if sources.is_empty() {
-            load_rules_from_dir(&rules_dir)
-        } else {
-            load_rules_from_sources(&sources, &rules_dir, &disabled)
-        }
-    })
-    .await;
+/// Run `reload_rules` off the runtime thread and emit `rules-ready` /
+/// `rules-compile-error` for the frontend.
+async fn compile_and_emit(state: &Arc<AppState>, handle: &tauri::AppHandle) {
+    let state_clone = state.clone();
+    let result = tokio::task::spawn_blocking(move || crate::commands::reload_rules(&state_clone)).await;
 
     match result {
-        Ok(Ok((rules, count))) => {
-            *state.rules.lock().unwrap() = Some(Arc::new(rules));
-            {
-                let mut stats = state.rule_stats.lock().unwrap();
-                stats.total_rules = count as u64;
-                stats.last_updated = Some(chrono::Utc::now());
-            }
-            log::info!("Recompiled after auto-import: {} rule file(s)", count);
+        Ok(Ok(count)) => {
             let _ = handle.emit("rules-ready", count as u32);
         }
-        Ok(Err(e)) => log::warn!("Recompile after auto-import failed: {}", e),
-        Err(e) => log::warn!("Recompile task panicked: {}", e),
+        Ok(Err(msg)) => {
+            let _ = handle.emit("rules-compile-error", serde_json::json!({ "error": msg }));
+            let _ = handle.emit("rules-ready", 0u32);
+        }
+        Err(e) => {
+            let msg = format!("Rule compilation task panicked: {}", e);
+            log::warn!("{}", msg);
+            let _ = handle.emit("rules-compile-error", serde_json::json!({ "error": msg }));
+            let _ = handle.emit("rules-ready", 0u32);
+        }
     }
 }
 
