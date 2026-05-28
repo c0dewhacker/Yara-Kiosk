@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.1](https://github.com/c0dewhacker/Yara-Kiosk/compare/v0.4.0...v0.4.1) (2026-05-28)
+
+
+### Bug Fixes
+
+* assorted robustness — atomic settings, canonicalize toggle, defer auto-refresh ([#37](https://github.com/c0dewhacker/Yara-Kiosk/issues/37)) ([9c7b440](https://github.com/c0dewhacker/Yara-Kiosk/commit/9c7b44081e280a7fc83b18a6c34a1daa9e7078d4))
+* **ci:** drop redundant gh auth login on Windows release upload ([7e03de6](https://github.com/c0dewhacker/Yara-Kiosk/commit/7e03de63435dcf2f31153fb402774683ea80d278))
+* **ci:** drop redundant gh auth login on Windows release upload ([ae35049](https://github.com/c0dewhacker/Yara-Kiosk/commit/ae350495d95d8130686047166617b47bc47240a6))
+
+
+### Performance Improvements
+
+* **reports:** write JSON sidecar so list_reports skips HTML parsing ([#35](https://github.com/c0dewhacker/Yara-Kiosk/issues/35)) ([f4f40ca](https://github.com/c0dewhacker/Yara-Kiosk/commit/f4f40ca276a8e187898fc68c8641b75960a53f7e))
+* **scanner:** mmap files, use walkdir, report all matched rules ([#34](https://github.com/c0dewhacker/Yara-Kiosk/issues/34)) ([4f49390](https://github.com/c0dewhacker/Yara-Kiosk/commit/4f4939095a06d93b8e3bd25ac77af3806ba6538c))
+
 ## [0.4.0](https://github.com/c0dewhacker/Yara-Kiosk/compare/v0.3.1...v0.4.0) (2026-05-27)
 
 
