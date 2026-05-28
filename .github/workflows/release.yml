@@ -142,8 +142,10 @@ jobs:
 
       - name: Upload artifact with friendly name
         shell: bash
+        # gh release upload reads GH_TOKEN from the env directly. Recent
+        # versions of gh refuse `gh auth login --with-token` (exit 1) when
+        # GH_TOKEN is already set, so no explicit login step is needed.
         run: |
-          echo "$GH_TOKEN" | gh auth login --with-token
           TAG="${{ needs.release-please.outputs.tag_name }}"
           SEM="${TAG#v}"
           for f in target/release/bundle/nsis/*.exe; do
