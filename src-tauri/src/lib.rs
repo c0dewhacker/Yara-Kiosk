@@ -190,39 +190,101 @@ async fn compile_rules_background(
     handle: tauri::AppHandle,
     data_dir: PathBuf,
 ) {
-    compile_and_emit(&state, &handle).await;
+    // Auto-import any .ykpk packages dropped in the data directory
+    // FIRST. Each file is imported then deleted — placing a package
+    // here (e.g. via USB on a kiosk) is a zero-interaction rule update.
+    // Doing this before the cache check means the mtime staleness
+    // detector will correctly invalidate the cache if a fresh package
+    // landed.
+    auto_import_dropped_packages(&state, &data_dir);
 
-    // Auto-import any .ykpk packages dropped in the data directory.
-    // Each file is imported then deleted — placing a package here (e.g. via USB
-    // on a kiosk) is a zero-interaction rule update.
-    let pkgs: Vec<_> = std::fs::read_dir(&data_dir)
+    // Fast path: try the on-disk compiled cache. yara-x deserialize is
+    // near-instant vs compiling thousands of rules from source on a
+    // low-powered kiosk box. Falls through to full compile when the
+    // cache is missing, stale, version-mismatched, or corrupt.
+    if try_load_from_cache(&state, &handle) {
+        return;
+    }
+
+    compile_and_emit(&state, &handle).await;
+}
+
+/// Scan the data directory for .ykpk packages, import each one, and
+/// delete the source file on success.
+fn auto_import_dropped_packages(state: &Arc<AppState>, data_dir: &PathBuf) {
+    let pkgs: Vec<_> = std::fs::read_dir(data_dir)
         .ok()
         .into_iter()
         .flatten()
         .flatten()
         .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("ykpk"))
         .collect();
-    if pkgs.is_empty() {
-        return;
-    }
 
-    let mut any_imported = false;
     for entry in &pkgs {
         let pkg = entry.path();
         match crate::parsers::packager::import_package(&pkg, &state.rules_dir) {
             Ok(_) => {
                 log::info!("Auto-imported {:?}", pkg);
                 let _ = std::fs::remove_file(&pkg);
-                any_imported = true;
             }
             Err(e) => log::warn!("Auto-import failed for {:?}: {}", pkg, e),
         }
     }
-    if !any_imported {
-        return;
+}
+
+/// Try to populate `state.rules` from the on-disk compiled cache.
+/// Returns `true` on a successful load (caller can skip full compile).
+fn try_load_from_cache(state: &Arc<AppState>, handle: &tauri::AppHandle) -> bool {
+    let cache = crate::core::rule_cache::RuleCache::new(&state.data_dir);
+    let sources_json = state.data_dir.join("sources.json");
+    let disabled_json = state.data_dir.join("disabled_rules.json");
+
+    let Some(rules) = cache.try_load(&state.rules_dir, &sources_json, &disabled_json) else {
+        return false;
+    };
+
+    // We don't store a "file count" in the cache, so re-derive it by
+    // walking the rules dir. Fast — just stats every file.
+    let file_count = count_rule_files(&state.rules_dir);
+    let sources_snapshot: Vec<core::state::RuleSource> = state.sources.lock().unwrap()
+        .iter()
+        .map(|s| core::state::RuleSource {
+            name: s.name.clone(),
+            rule_count: s.rule_count,
+            fetched_at: s.fetched_at,
+        })
+        .collect();
+
+    *state.rules.lock().unwrap() = Some(Arc::new(rules));
+    {
+        let mut stats = state.rule_stats.lock().unwrap();
+        stats.total_rules = file_count;
+        // last_updated reflects when the cache was written, not now.
+        stats.last_updated = std::fs::metadata(&cache.path)
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .map(chrono::DateTime::<chrono::Utc>::from);
+        stats.sources = sources_snapshot;
     }
 
-    compile_and_emit(&state, &handle).await;
+    log::info!("Rules ready from cache ({} file(s))", file_count);
+    let _ = handle.emit("rules-ready", file_count as u32);
+    true
+}
+
+fn count_rule_files(dir: &std::path::Path) -> u64 {
+    walkdir::WalkDir::new(dir)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|e| e.file_type().is_file())
+        .filter(|e| {
+            matches!(
+                e.path().extension().and_then(|x| x.to_str()).map(str::to_ascii_lowercase).as_deref(),
+                Some("yar") | Some("yara") | Some("yaml") | Some("yml")
+            )
+        })
+        .count() as u64
 }
 
 /// Run `reload_rules` off the runtime thread and emit `rules-ready` /

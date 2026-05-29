@@ -86,8 +86,9 @@ pub fn save_disabled(state: &AppState) {
 // ──────────────────────────────────────────────
 
 /// Recompile rules from the configured sources and publish to state.
-/// Returns the number of rule files compiled, or the underlying error
-/// message (also logged at error level) on failure.
+/// Also rewrites the on-disk binary cache so the next startup can skip
+/// compilation. Returns the number of rule files compiled, or the
+/// underlying error message (also logged at error level) on failure.
 pub fn reload_rules(state: &Arc<AppState>) -> Result<usize, String> {
     let sources = lock!(state.sources).clone();
     let disabled = lock!(state.disabled_rules).clone();
@@ -100,6 +101,20 @@ pub fn reload_rules(state: &Arc<AppState>) -> Result<usize, String> {
 
     match result {
         Ok((compiled, count)) => {
+            // Refresh the on-disk cache before swapping state so any
+            // crash between here and the lock release still leaves a
+            // valid cache for the next launch.
+            let cache = crate::core::rule_cache::RuleCache::new(&state.data_dir);
+            if count > 0 {
+                if let Err(e) = cache.write(&compiled) {
+                    log::warn!("Could not refresh rule cache: {}", e);
+                }
+            } else {
+                // Empty ruleset — drop any stale cache so we don't serve
+                // it next launch.
+                cache.invalidate();
+            }
+
             *lock!(state.rules) = Some(Arc::new(compiled));
             let mut stats = lock!(state.rule_stats);
             stats.total_rules = count as u64;
