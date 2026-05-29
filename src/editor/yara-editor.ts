@@ -72,7 +72,11 @@ function loadYaraX(): Promise<boolean> {
       await (mod.default as InitFn)({ module_or_path: wasmAsset });
       CompilerCtor = mod.Compiler as unknown as YaraCompilerCtor;
       return true;
-    } catch {
+    } catch (err) {
+      // Surface the failure so a CSP block, missing WASM, or API drift is
+      // visible in the dev console instead of silently turning off
+      // syntax-error highlighting in the editor.
+      console.error('[yara-editor] Failed to load yara-x WASM:', err);
       return false;
     }
   })();
@@ -85,10 +89,15 @@ async function compileErrors(content: string): Promise<YaraError[]> {
   try {
     try {
       compiler.addSource(content);
-    } catch {
-      // addSource throws on unrecoverable parse errors; details are in errors[]
+    } catch (addErr) {
+      // addSource throws on unrecoverable parse errors; details should still
+      // appear in compiler.errors. Log so a regression in that contract is
+      // obvious.
+      console.debug('[yara-editor] addSource threw:', addErr);
     }
-    return parseErrors(compiler.errors);
+    const rawErrors = compiler.errors;
+    if (rawErrors.length === 0) return [];
+    return parseErrors(rawErrors);
   } finally {
     compiler.free();
   }

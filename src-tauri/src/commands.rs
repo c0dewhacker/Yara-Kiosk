@@ -106,12 +106,16 @@ pub fn reload_rules(state: &Arc<AppState>) -> Result<usize, String> {
             // valid cache for the next launch.
             let cache = crate::core::rule_cache::RuleCache::new(&state.data_dir);
             if count > 0 {
-                if let Err(e) = cache.write(&compiled) {
-                    log::warn!("Could not refresh rule cache: {}", e);
+                log::info!("reload_rules: writing cache to {:?}", cache.path);
+                match cache.write(&compiled) {
+                    Ok(_) => log::info!("reload_rules: cache write succeeded"),
+                    Err(e) => log::error!("reload_rules: cache write FAILED: {:#}", e),
                 }
             } else {
-                // Empty ruleset — drop any stale cache so we don't serve
-                // it next launch.
+                log::info!(
+                    "reload_rules: no rules compiled (count=0), invalidating cache at {:?}",
+                    cache.path
+                );
                 cache.invalidate();
             }
 

@@ -21,7 +21,14 @@ use anyhow::Context;
 use walkdir::WalkDir;
 use yara_x::Rules;
 
-pub const CACHE_FILENAME: &str = "rules.bin";
+/// Cache filename. Bumped to .v2 when we enabled yara-x's
+/// `native-code-serialization` feature so old caches (which deserialize
+/// successfully but trigger the slow WASM-rebuild path) get superseded
+/// rather than reused.
+pub const CACHE_FILENAME: &str = "rules.binv2";
+
+/// Old cache filename, deleted on first run after the upgrade.
+const LEGACY_CACHE_FILENAME: &str = "rules.bin";
 
 pub struct RuleCache {
     pub path: PathBuf,

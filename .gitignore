@@ -5,6 +5,7 @@
 CLAUDE.md
 DESIGN.md
 node_modules/
+graphify-out/
 dist/
 build/
 target/

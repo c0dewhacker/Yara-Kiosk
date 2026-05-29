@@ -23,7 +23,7 @@ tokio = { version = "1", features = ["full"] }
 rayon = "1"
 walkdir = "2"
 memmap2 = "0.9"
-yara-x = "1.16"
+yara-x = { version = "1.16", features = ["native-code-serialization"] }
 zip = { version = "8", default-features = false, features = ["deflate"] }
 sha2 = "0.11"
 hex = "0.4"
