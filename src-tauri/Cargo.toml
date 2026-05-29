@@ -27,7 +27,7 @@ yara-x = "1.16"
 zip = { version = "8", default-features = false, features = ["deflate"] }
 sha2 = "0.11"
 hex = "0.4"
-reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+reqwest = { version = "0.13", features = ["json", "rustls-tls"], default-features = false }
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "6"
