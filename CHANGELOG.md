@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.1](https://github.com/c0dewhacker/Yara-Kiosk/compare/v0.5.0...v0.5.1) (2026-05-30)
+
+
+### Bug Fixes
+
+* **auth:** GetUserNameW now takes Option&lt;PWSTR&gt; in windows 0.62 ([6103474](https://github.com/c0dewhacker/Yara-Kiosk/commit/610347437710f954c89dab4aff6acbdb3f3cc3d0))
+* **auth:** GetUserNameW takes Option&lt;PWSTR&gt; in windows 0.62 ([195c0cb](https://github.com/c0dewhacker/Yara-Kiosk/commit/195c0cbcff5d9c70e08bc0ee349337d29c4ab393))
+
 ## [0.5.0](https://github.com/c0dewhacker/Yara-Kiosk/compare/v0.4.1...v0.5.0) (2026-05-30)
 
 
