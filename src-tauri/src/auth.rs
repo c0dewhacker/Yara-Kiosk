@@ -59,8 +59,9 @@ mod platform {
         let mut buf = vec![0u16; 257];
         let mut len = buf.len() as u32;
         unsafe {
+            // windows 0.62 changed lpbuffer to Option<PWSTR>; wrap explicitly.
             GetUserNameW(
-                windows::core::PWSTR(buf.as_mut_ptr()),
+                Some(windows::core::PWSTR(buf.as_mut_ptr())),
                 &mut len,
             )
             .map_err(|e| format!("GetUserNameW failed: {}", e))?;
