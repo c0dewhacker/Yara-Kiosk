@@ -3,7 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com;" />
+    <!-- Do NOT add a Content-Security-Policy meta tag here. The CSP is
+         configured in src-tauri/tauri.conf.json and Tauri ships it as a
+         response header (production) plus injects per-load nonces. A
+         second CSP via meta tag would be enforced alongside the header,
+         intersecting to the strictest set — that previously stripped
+         'wasm-unsafe-eval' and 'unsafe-inline' silently and broke the
+         in-app rule editor (WASM) and report iframe. -->
     <title>YARA-X Kiosk</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
