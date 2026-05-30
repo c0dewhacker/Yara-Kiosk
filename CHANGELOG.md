@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.0](https://github.com/c0dewhacker/Yara-Kiosk/compare/v0.4.1...v0.5.0) (2026-05-30)
+
+
+### Features
+
+* **rules:** cache compiled ruleset for instant startup ([d3a963a](https://github.com/c0dewhacker/Yara-Kiosk/commit/d3a963a7f1248822f87ccd3e65caaf80a29c2eb6))
+* **rules:** cache compiled ruleset for instant startup ([895d96f](https://github.com/c0dewhacker/Yara-Kiosk/commit/895d96f5a44c73ce33131a5447b6399db33ee4a6))
+
+
+### Bug Fixes
+
+* **csp:** add data: to default-src for inline SVG assets ([491097d](https://github.com/c0dewhacker/Yara-Kiosk/commit/491097d71064049d3699ce62f0f856dbe15d3876))
+* remove duplicate CSP meta tag, bump rule cache filename ([21d3044](https://github.com/c0dewhacker/Yara-Kiosk/commit/21d3044beb83d56f9d4357dbc9de1749992ee3a2))
+
 ## [0.4.1](https://github.com/c0dewhacker/Yara-Kiosk/compare/v0.4.0...v0.4.1) (2026-05-28)
 
 
