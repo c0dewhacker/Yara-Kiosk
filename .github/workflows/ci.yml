@@ -40,6 +40,31 @@ jobs:
         run: cargo check
         working-directory: src-tauri
 
+  check-rust-windows:
+    name: Rust — cargo check (Windows)
+    runs-on: windows-latest
+    # cargo check on Windows compiles the cfg(target_os = "windows") path
+    # in auth.rs and core/watcher.rs that Linux CI skips entirely. Without
+    # this job, Win32 API signature changes (e.g. the windows 0.58 → 0.62
+    # bump) slip through to the release build.
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Rust build artefacts
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: cargo check
+        run: cargo check
+        working-directory: src-tauri
+
   check-ts:
     name: TypeScript — tsc --noEmit
     runs-on: ubuntu-latest
