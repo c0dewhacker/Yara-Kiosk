@@ -36,6 +36,18 @@ pub struct RuleCache {
 
 impl RuleCache {
     pub fn new(data_dir: &Path) -> Self {
+        // Clean up the pre-native-code cache file if it survives from an
+        // earlier build. The old file deserializes fine but triggers
+        // yara-x's WASM-rebuild fallback, which adds ~10s to every load.
+        let legacy = data_dir.join(LEGACY_CACHE_FILENAME);
+        if legacy.exists() {
+            if let Err(e) = std::fs::remove_file(&legacy) {
+                log::warn!("Could not remove legacy rule cache {:?}: {}", legacy, e);
+            } else {
+                log::info!("Removed legacy rule cache at {:?}", legacy);
+            }
+        }
+
         Self {
             path: data_dir.join(CACHE_FILENAME),
         }
