@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.2](https://github.com/c0dewhacker/Yara-Kiosk/compare/v0.5.1...v0.5.2) (2026-05-31)
+
+
+### Bug Fixes
+
+* **windows:** canonicalize base path in validate_path ([db33cac](https://github.com/c0dewhacker/Yara-Kiosk/commit/db33cacf9e017517e227b904b4691124baa9935d))
+* **windows:** canonicalize the base path in validate_path ([3ec33c6](https://github.com/c0dewhacker/Yara-Kiosk/commit/3ec33c6a373086b00dedfc271a52545c8fc9d44d))
+
 ## [0.5.1](https://github.com/c0dewhacker/Yara-Kiosk/compare/v0.5.0...v0.5.1) (2026-05-30)
 
 
