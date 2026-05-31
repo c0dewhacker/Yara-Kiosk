@@ -20,11 +20,21 @@ const YARA_X_VERSION: &str = "1.16";
 
 /// Canonicalize `path` and verify it is within `base`.
 /// Returns `Err` if the path is non-existent, non-canonical, or outside `base`.
+///
+/// Both sides must go through `canonicalize` because on Windows it returns
+/// extended-length UNC paths (`\\?\C:\…`) while a plain `PathBuf::join`
+/// does not — comparing a UNC-prefixed canonical against a non-prefixed
+/// base would always fail `starts_with` even when the path is legitimately
+/// inside the allowed directory, which broke rule edit and report open
+/// on Windows installs into the default %LocalAppData% location.
 fn validate_path(path: &str, base: &std::path::Path) -> Result<std::path::PathBuf, String> {
     let canonical = std::path::Path::new(path)
         .canonicalize()
         .map_err(|_| "Invalid or non-existent path".to_string())?;
-    if !canonical.starts_with(base) {
+    let canonical_base = base
+        .canonicalize()
+        .map_err(|e| format!("Failed to canonicalize allowed directory {:?}: {}", base, e))?;
+    if !canonical.starts_with(&canonical_base) {
         return Err("Path is outside the allowed directory".to_string());
     }
     Ok(canonical)
