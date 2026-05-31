@@ -2,6 +2,8 @@
 
 A Tauri 2 desktop application for kiosk-mode malware scanning using [YARA-X](https://virustotal.github.io/yara-x/). Insert a USB drive, hit scan, get a report — no browser or internet access required at scan time.
 
+![Demo](demo.gif)
+
 ## Features
 
 - **USB auto-detection** — detects inserted drives and offers one-click scanning (Linux and Windows)
