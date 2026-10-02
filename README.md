@@ -43,6 +43,20 @@ Outputs:
 - **Linux** — `src-tauri/target/release/bundle/appimage/yara-kiosk_*.AppImage`
 - **Windows** — `src-tauri\target\release\bundle\nsis\Yara-Kiosk_*_x64-setup.exe`
 
+### Windows installer data directory
+
+The NSIS installer accepts a `dataDirectory` option for managed and silent
+deployments. The selected directory is used for rules, reports, and settings:
+
+```powershell
+.\Yara-Kiosk_VERSION_x64-setup.exe /S /dataDirectory="D:\YaraKioskData"
+```
+
+The value persists for installed-app launches and upgrades. Passing
+`--data-dir=PATH` directly to `yara-kiosk.exe` overrides the installer setting
+for that launch. Uninstalling with **Delete application data** selected also
+removes the installer setting.
+
 ## Development
 
 ```bash

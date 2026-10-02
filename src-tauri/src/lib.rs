@@ -39,9 +39,13 @@ pub struct KioskConfig {
 
 impl KioskConfig {
     pub fn from_args() -> Self {
+        Self::from_arg_values(std::env::args().skip(1))
+    }
+
+    fn from_arg_values(args: impl IntoIterator<Item = String>) -> Self {
         let mut data_dir = None;
         let mut fullscreen = false;
-        for arg in std::env::args().skip(1) {
+        for arg in args {
             if let Some(path) = arg.strip_prefix("--data-dir=") {
                 data_dir = Some(PathBuf::from(path));
             } else if arg == "--fullscreen" || arg == "--kiosk" {
@@ -50,10 +54,71 @@ impl KioskConfig {
         }
         Self { data_dir, fullscreen }
     }
+
+    /// Apply Windows installer configuration when the command line does not
+    /// provide an explicit data directory.
+    #[cfg(target_os = "windows")]
+    fn with_installer_config(mut self) -> Self {
+        if self.data_dir.is_none() {
+            self.data_dir = installer_data_dir();
+        }
+        self
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn with_installer_config(self) -> Self {
+        self
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn installer_data_dir() -> Option<PathBuf> {
+    use winreg::RegKey;
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+
+    [HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE]
+        .into_iter()
+        .find_map(|root| {
+            let key = RegKey::predef(root)
+                .open_subkey(r"Software\YaraKiosk")
+                .ok()?;
+            let value: String = key.get_value("DataDirectory").ok()?;
+            let value = value.trim();
+            (!value.is_empty()).then(|| PathBuf::from(value))
+        })
+}
+
+#[cfg(test)]
+mod kiosk_config_tests {
+    use super::KioskConfig;
+    use std::path::PathBuf;
+
+    #[test]
+    fn parses_data_directory_and_kiosk_flags() {
+        let config = KioskConfig::from_arg_values([
+            "--data-dir=D:\\Yara Kiosk Data".to_owned(),
+            "--kiosk".to_owned(),
+        ]);
+
+        assert_eq!(
+            config.data_dir,
+            Some(PathBuf::from(r"D:\Yara Kiosk Data"))
+        );
+        assert!(config.fullscreen);
+    }
+
+    #[test]
+    fn ignores_unrelated_arguments() {
+        let config = KioskConfig::from_arg_values(["--unknown".to_owned()]);
+
+        assert_eq!(config.data_dir, None);
+        assert!(!config.fullscreen);
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run(config: KioskConfig) {
+    let config = config.with_installer_config();
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
@@ -62,10 +127,11 @@ pub fn run(config: KioskConfig) {
         .setup(move |app| {
             env_logger::init();
 
-            // Resolve data directory: --data-dir flag wins, then Tauri default.
+            // Resolve data directory: CLI flag, Windows installer setting,
+            // then the Tauri default.
             let app_data_dir = if let Some(ref dir) = config.data_dir {
                 std::fs::create_dir_all(dir)
-                    .expect("Failed to create --data-dir directory");
+                    .expect("Failed to create configured data directory");
                 dir.clone()
             } else {
                 app.path()
