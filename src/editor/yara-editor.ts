@@ -1,5 +1,5 @@
 import * as monaco from 'monaco-editor';
-import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
+import editorWorker from 'monaco-editor/editor/editor.worker.js?worker';
 import { registerYaraLanguage } from './yara-monarch';
 
 // Must be set before any monaco.editor.create() call.

@@ -15,7 +15,7 @@ use crate::ManagedState;
 
 /// Tracks the yara-x dependency declared in Cargo.toml — surfaced in the
 /// Settings About panel. Update both when bumping the crate.
-const YARA_X_VERSION: &str = "1.16";
+const YARA_X_VERSION: &str = "1.21";
 
 
 /// Canonicalize `path` and verify it is within `base`.

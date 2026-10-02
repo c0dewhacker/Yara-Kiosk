@@ -23,14 +23,14 @@ tokio = { version = "1", features = ["full"] }
 rayon = "1"
 walkdir = "2"
 memmap2 = "0.9"
-yara-x = { version = "1.16", features = ["native-code-serialization"] }
+yara-x = { version = "1.21", features = ["native-code-serialization"] }
 zip = { version = "8", default-features = false, features = ["deflate"] }
 sha2 = "0.11"
 hex = "0.4"
 reqwest = { version = "0.13", features = ["json", "query", "rustls"], default-features = false }
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
-dirs = "6"
+dirs = "7"
 anyhow = "1"
 log = "0.4"
 env_logger = "0.11"
@@ -40,6 +40,7 @@ pam = "0.8"
 libc = "0.2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
+winreg = "0.56"
 windows = { version = "0.62", features = [
     "Win32_Storage_FileSystem",
     "Win32_Foundation",
