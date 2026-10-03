@@ -9,18 +9,18 @@
     "tauri": "tauri"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@tauri-apps/api": "^2",
-    "@tauri-apps/cli": "^2",
-    "autoprefixer": "^10",
-    "postcss": "^8",
-    "tailwindcss": "^4",
-    "typescript": "^6",
-    "vite": "^8"
+    "@tailwindcss/postcss": "^4.3.3",
+    "@tauri-apps/api": "^2.12.1",
+    "@tauri-apps/cli": "^2.12.1",
+    "autoprefixer": "^10.6.1",
+    "postcss": "^8.5.28",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.2"
   },
   "dependencies": {
-    "@tauri-apps/plugin-dialog": "^2.7.1",
-    "@virustotal/yara-x": "^1.15.0",
-    "monaco-editor": "^0.55.1"
+    "@tauri-apps/plugin-dialog": "^2.8.1",
+    "@virustotal/yara-x": "^1.21.0",
+    "monaco-editor": "^0.57.0"
   }
 }
