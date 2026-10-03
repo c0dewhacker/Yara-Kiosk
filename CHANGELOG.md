@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0](https://github.com/c0dewhacker/Yara-Kiosk/compare/v0.5.2...v0.6.0) (2026-10-03)
+
+
+### Features
+
+* add configurable Windows installer data directory ([7d2dbfd](https://github.com/c0dewhacker/Yara-Kiosk/commit/7d2dbfdb4e6feddd1a58c3b34f83601a941ef2be))
+* **windows:** support installer data directory ([212b3c0](https://github.com/c0dewhacker/Yara-Kiosk/commit/212b3c0717b364c9a0a241ddc0813c92b2be92d1))
+
 ## [0.5.2](https://github.com/c0dewhacker/Yara-Kiosk/compare/v0.5.1...v0.5.2) (2026-05-31)
 
 
