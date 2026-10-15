@@ -24,7 +24,7 @@ rayon = "1"
 walkdir = "2"
 memmap2 = "0.9"
 yara-x = { version = "1.21", features = ["native-code-serialization"] }
-zip = { version = "8", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 sha2 = "0.11"
 hex = "0.4"
 reqwest = { version = "0.13", features = ["json", "query", "rustls"], default-features = false }
