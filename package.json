@@ -21,6 +21,6 @@
   "dependencies": {
     "@tauri-apps/plugin-dialog": "^2.8.3",
     "@virustotal/yara-x": "^1.21.0",
-    "monaco-editor": "^0.57.0"
+    "monaco-editor": "^0.58.0"
   }
 }
