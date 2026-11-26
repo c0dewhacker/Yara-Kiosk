@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/c0dewhacker/Yara-Kiosk/compare/v0.6.0...v0.6.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **windows:** detect USB storage and show connected drives at startup ([7acc5d6](https://github.com/c0dewhacker/Yara-Kiosk/commit/7acc5d6c531c28de4a42263cb8a3324172841517))
+
 ## [0.6.0](https://github.com/c0dewhacker/Yara-Kiosk/compare/v0.5.2...v0.6.0) (2026-10-03)
 
 
