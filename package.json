@@ -12,7 +12,7 @@
     "@tailwindcss/postcss": "^4.3.3",
     "@tauri-apps/api": "^2.12.3",
     "@tauri-apps/cli": "^2.12.1",
-    "autoprefixer": "^10.6.1",
+    "autoprefixer": "^10.6.2",
     "postcss": "^8.5.28",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
