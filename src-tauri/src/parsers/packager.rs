@@ -95,7 +95,7 @@ pub fn import_package(package_path: &Path, rules_dir: &Path) -> Result<u64, anyh
 
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i).context("Failed to read ZIP entry")?;
-        let name = entry.name().to_string();
+        let name = entry.name().context("Invalid ZIP entry name")?.into_owned();
 
         // Skip manifest.
         if name == "manifest.json" {

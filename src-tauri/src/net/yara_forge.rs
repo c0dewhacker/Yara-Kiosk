@@ -86,7 +86,7 @@ fn extract_zip(
 
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i).context("Reading ZIP entry")?;
-        let name = entry.name().to_string();
+        let name = entry.name().context("Invalid ZIP entry name")?.into_owned();
 
         let ext = Path::new(&name)
             .extension()

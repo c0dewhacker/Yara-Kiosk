@@ -411,7 +411,7 @@ async fn fetch_url_source(
         let mut count = 0u64;
         for i in 0..archive.len() {
             let mut entry = archive.by_index(i)?;
-            let name = entry.name().to_string();
+            let name = entry.name().context("Invalid ZIP entry name")?.into_owned();
             let ext = std::path::Path::new(&name)
                 .extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
             if !matches!(ext.as_str(), "yar" | "yara" | "yaml" | "yml") { continue; }
