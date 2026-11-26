@@ -233,6 +233,11 @@ pub async fn scan_usb(
 }
 
 #[tauri::command]
+pub fn list_usb_devices() -> Vec<crate::core::watcher::UsbDevice> {
+    crate::core::watcher::current_usb_devices()
+}
+
+#[tauri::command]
 pub fn cancel_scan(scan_id: String, state: State<'_, ManagedState>) -> Result<(), String> {
     let flags = lock!(state.0.cancel_flags);
     if let Some(flag) = flags.get(&scan_id) {

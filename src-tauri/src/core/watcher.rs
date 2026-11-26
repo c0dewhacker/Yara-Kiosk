@@ -1,5 +1,40 @@
 use tauri::{AppHandle, Emitter};
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsbDevice {
+    mount_point: String,
+    label: Option<String>,
+    size_bytes: u64,
+}
+
+pub fn current_usb_devices() -> Vec<UsbDevice> {
+    #[cfg(target_os = "windows")]
+    return enumerate_usb_drives()
+        .into_iter()
+        .map(|drive| UsbDevice {
+            label: get_volume_label(&drive),
+            size_bytes: get_drive_size(&drive).unwrap_or(0),
+            mount_point: drive,
+        })
+        .collect();
+
+    #[cfg(target_os = "linux")]
+    return parse_mounts()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|(_, device, _)| is_removable_device(device))
+        .map(|(mount_point, device, _)| UsbDevice {
+            label: read_label(&device).unwrap_or(None),
+            size_bytes: read_block_size(&device).unwrap_or(0),
+            mount_point,
+        })
+        .collect();
+
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    Vec::new()
+}
+
 // ──────────────────────────────────────────────
 // Linux implementation
 // ──────────────────────────────────────────────
@@ -97,7 +132,9 @@ fn parse_mounts() -> Result<Vec<(String, String, String)>, anyhow::Error> {
 #[cfg(target_os = "linux")]
 fn base_device_name(device: &str) -> &str {
     let dev_name = device.strip_prefix("/dev/").unwrap_or(device);
-    let end = dev_name.find(|c: char| c.is_ascii_digit()).unwrap_or(dev_name.len());
+    let end = dev_name
+        .find(|c: char| c.is_ascii_digit())
+        .unwrap_or(dev_name.len());
     &dev_name[..end]
 }
 
@@ -106,7 +143,9 @@ fn base_device_name(device: &str) -> &str {
 #[cfg(target_os = "linux")]
 fn is_removable_device(device: &str) -> bool {
     let base_dev = base_device_name(device);
-    if base_dev.is_empty() { return false; }
+    if base_dev.is_empty() {
+        return false;
+    }
     let removable_path = format!("/sys/block/{}/removable", base_dev);
     std::fs::read_to_string(&removable_path)
         .map(|s| s.trim() == "1")
@@ -146,7 +185,9 @@ fn read_label(device: &str) -> Result<Option<String>, anyhow::Error> {
 fn read_block_size(device: &str) -> Result<u64, anyhow::Error> {
     let dev_name = device.strip_prefix("/dev/").unwrap_or(device);
     let base_dev = base_device_name(device);
-    if base_dev.is_empty() { return Ok(0); }
+    if base_dev.is_empty() {
+        return Ok(0);
+    }
 
     let size_path = if dev_name != base_dev {
         // Partition: e.g. sdb1 → /sys/block/sdb/sdb1/size
@@ -171,14 +212,14 @@ pub async fn watch_mounts(app: AppHandle) {
     let mut known: HashSet<String> = HashSet::new();
 
     // Seed with current removable drives.
-    for drive in enumerate_removable_drives() {
+    for drive in enumerate_usb_drives() {
         known.insert(drive);
     }
 
     loop {
         tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
-        let current: HashSet<String> = enumerate_removable_drives().into_iter().collect();
+        let current: HashSet<String> = enumerate_usb_drives().into_iter().collect();
 
         // New drives.
         for drive in current.difference(&known) {
@@ -198,10 +239,7 @@ pub async fn watch_mounts(app: AppHandle) {
         // Removed drives.
         for drive in known.difference(&current) {
             log::info!("USB removed: {}", drive);
-            let _ = app.emit(
-                "usb-removed",
-                serde_json::json!({ "mountPoint": drive }),
-            );
+            let _ = app.emit("usb-removed", serde_json::json!({ "mountPoint": drive }));
         }
 
         known = current;
@@ -209,13 +247,11 @@ pub async fn watch_mounts(app: AppHandle) {
 }
 
 #[cfg(target_os = "windows")]
-fn enumerate_removable_drives() -> Vec<String> {
-    use windows::Win32::Storage::FileSystem::{
-        GetDriveTypeW, GetLogicalDriveStringsW,
-    };
-    // DRIVE_REMOVABLE is not re-exported by the windows 0.58 crate under
-    // Win32_Storage_FileSystem; use the raw value (2) from the Win32 SDK docs.
+fn enumerate_usb_drives() -> Vec<String> {
+    use windows::Win32::Storage::FileSystem::{GetDriveTypeW, GetLogicalDriveStringsW};
+    // USB hard disks often report DRIVE_FIXED, so inspect their storage bus.
     const DRIVE_REMOVABLE: u32 = 2;
+    const DRIVE_FIXED: u32 = 3;
 
     // Buffer large enough for all possible drive strings.
     let mut buf = vec![0u16; 512];
@@ -234,10 +270,11 @@ fn enumerate_removable_drives() -> Vec<String> {
                 // Append null for PCWSTR.
                 let drive_wstr: Vec<u16> =
                     drive_str.encode_utf16().chain(std::iter::once(0)).collect();
-                let drive_type = unsafe {
-                    GetDriveTypeW(windows::core::PCWSTR(drive_wstr.as_ptr()))
-                };
-                if drive_type == DRIVE_REMOVABLE {
+                let drive_type =
+                    unsafe { GetDriveTypeW(windows::core::PCWSTR(drive_wstr.as_ptr())) };
+                if drive_type == DRIVE_REMOVABLE
+                    || (drive_type == DRIVE_FIXED && is_usb_bus(&drive_str))
+                {
                     drives.push(drive_str);
                 }
             }
@@ -245,6 +282,73 @@ fn enumerate_removable_drives() -> Vec<String> {
         }
     }
     drives
+}
+
+#[cfg(target_os = "windows")]
+fn is_usb_bus(drive: &str) -> bool {
+    use std::ffi::c_void;
+    use std::mem::size_of;
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::Storage::FileSystem::{
+        BusTypeUsb, CreateFileW, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+    };
+    use windows_sys::Win32::System::Ioctl::{
+        PropertyStandardQuery, StorageDeviceProperty, IOCTL_STORAGE_QUERY_PROPERTY,
+        STORAGE_DEVICE_DESCRIPTOR, STORAGE_PROPERTY_QUERY,
+    };
+    use windows_sys::Win32::System::IO::DeviceIoControl;
+
+    let volume = format!(r"\\.\{}", drive.trim_end_matches('\\'));
+    let path: Vec<u16> = volume.encode_utf16().chain(std::iter::once(0)).collect();
+    // Querying storage properties does not require write access to the volume.
+    let handle = unsafe {
+        CreateFileW(
+            path.as_ptr(),
+            0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            std::ptr::null(),
+            OPEN_EXISTING,
+            0,
+            std::ptr::null_mut(),
+        )
+    };
+    if handle == INVALID_HANDLE_VALUE {
+        log::debug!(
+            "Cannot open volume {} for USB bus query: {}",
+            drive,
+            std::io::Error::last_os_error()
+        );
+        return false;
+    }
+
+    let query = STORAGE_PROPERTY_QUERY {
+        PropertyId: StorageDeviceProperty,
+        QueryType: PropertyStandardQuery,
+        AdditionalParameters: [0],
+    };
+    let mut output = [0u64; 128];
+    let mut returned = 0u32;
+    let ok = unsafe {
+        DeviceIoControl(
+            handle,
+            IOCTL_STORAGE_QUERY_PROPERTY,
+            &query as *const _ as *const c_void,
+            size_of::<STORAGE_PROPERTY_QUERY>() as u32,
+            output.as_mut_ptr() as *mut c_void,
+            size_of_val(&output) as u32,
+            &mut returned,
+            std::ptr::null_mut(),
+        )
+    };
+    unsafe { CloseHandle(handle) };
+    let bus_type_end = std::mem::offset_of!(STORAGE_DEVICE_DESCRIPTOR, BusType)
+        + size_of::<windows_sys::Win32::Storage::FileSystem::STORAGE_BUS_TYPE>();
+    if ok == 0 || (returned as usize) < bus_type_end {
+        log::debug!("Cannot query USB bus for volume {}", drive);
+        return false;
+    }
+    let descriptor = unsafe { &*(output.as_ptr() as *const STORAGE_DEVICE_DESCRIPTOR) };
+    descriptor.BusType == BusTypeUsb
 }
 
 #[cfg(target_os = "windows")]
@@ -262,13 +366,21 @@ fn get_volume_label(drive: &str) -> Option<String> {
             None,
             None,
             None,
-        ).is_ok()
+        )
+        .is_ok()
     };
 
     if ok {
-        let end = name_buf.iter().position(|&c| c == 0).unwrap_or(name_buf.len());
+        let end = name_buf
+            .iter()
+            .position(|&c| c == 0)
+            .unwrap_or(name_buf.len());
         let label = String::from_utf16_lossy(&name_buf[..end]);
-        if label.is_empty() { None } else { Some(label) }
+        if label.is_empty() {
+            None
+        } else {
+            Some(label)
+        }
     } else {
         None
     }

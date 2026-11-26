@@ -214,6 +214,7 @@ pub fn run(config: KioskConfig) {
         .invoke_handler(tauri::generate_handler![
             commands::scan_path,
             commands::scan_usb,
+            commands::list_usb_devices,
             commands::cancel_scan,
             commands::get_scan_result,
             commands::import_rule_package,
