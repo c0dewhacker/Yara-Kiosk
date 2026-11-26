@@ -322,6 +322,15 @@ export class App {
       showToast(`Rule compilation error: ${event.payload.error}`, 'error');
     });
     this.unlisteners.push(unlistenCompileError);
+
+    // The watcher starts before the webview subscribes and seeds its drive set.
+    // Fetch a snapshot so drives already connected at launch appear as well.
+    try {
+      const devices = await invoke<UsbDevice[]>('list_usb_devices');
+      for (const device of devices) this.dashboard.onUsbDetected(device);
+    } catch (err) {
+      console.warn('Failed to list connected USB drives:', err);
+    }
   }
 
   private registerCustomEvents(): void {
