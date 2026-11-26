@@ -5,7 +5,6 @@
 
 ### Bug Fixes
 
-* **security:** update YARA-X to 1.24 ([9c29cf7](https://github.com/c0dewhacker/Yara-Kiosk/commit/9c29cf7ecf5e646ad1f9b849b280ee652ea0e232))
 * **security:** update YARA-X to 1.24 ([f5ec6d8](https://github.com/c0dewhacker/Yara-Kiosk/commit/f5ec6d8b6822480d0b7dda6f567a299d9527bdcc))
 
 ## [0.6.1](https://github.com/c0dewhacker/Yara-Kiosk/compare/v0.6.0...v0.6.1) (2026-11-26)
