@@ -162,3 +162,23 @@ fn latest_file_mtime(dir: &Path) -> Option<SystemTime> {
         .filter_map(|e| e.metadata().ok().and_then(|m| m.modified().ok()))
         .max()
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn compiled_rules_survive_cache_round_trip_and_scan() {
+        let mut compiler = yara_x::Compiler::new();
+        compiler
+            .add_source(r#"rule CacheSmoke { strings: $hit = "payload" condition: $hit }"#)
+            .expect("compile smoke rule");
+        let rules = compiler.build();
+        let bytes = rules.serialize().expect("serialize compiled rule");
+        let restored = yara_x::Rules::deserialize(&bytes).expect("deserialize compiled rule");
+        let mut scanner = yara_x::Scanner::new(&restored);
+
+        let result = scanner
+            .scan(b"test payload")
+            .expect("scan with restored rule");
+        assert_eq!(result.matching_rules().count(), 1);
+    }
+}
